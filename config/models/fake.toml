@@ -1,0 +1,8 @@
+# Modelo falso: sin red ni coste. Para pruebas, simulación y CI.
+provider = "fake"
+model = "fake-1"
+supports_vision = true
+
+[options]
+# responses = ["respuesta 1", "respuesta 2"]   # respuestas guionizadas, en orden
+latency_ms = 0

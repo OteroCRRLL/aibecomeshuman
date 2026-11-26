@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.ruff_cache/
+dist/
+build/
+*.egg-info/
+
+# Secretos
+.env
+
+# Salidas de partidas (eventos, manifiestos, llamadas grabadas)
+runs/
+
+# Capturas y grabaciones del juego: contenido con copyright, nunca al repo.
+# Solo se versionan las etiquetas (data/labels/).
+data/*
+!data/labels/
+!data/README.md
+
+# Sistema
+.DS_Store
+Thumbs.db

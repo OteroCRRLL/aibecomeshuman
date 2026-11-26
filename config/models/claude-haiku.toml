@@ -1,0 +1,8 @@
+# Modelo rápido y barato: observador de fotogramas y elecciones con temporizador.
+provider = "anthropic"
+model = "claude-haiku-5-5"
+effort = "low"
+max_tokens = 4000
+timeout_s = 20
+supports_vision = true
+refusal_fallback = false
