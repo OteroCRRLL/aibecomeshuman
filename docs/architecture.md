@@ -132,8 +132,9 @@ the browser.
 
 ## Game language
 
-The game will run with **English voices and Spanish text**. The agent does not hear
-audio: it reads the **Spanish subtitles** (subtitles must be enabled in the game).
+The game will run **fully in Spanish** (voices and text), for a Spanish-speaking
+audience. The agent does not hear audio: it reads the **Spanish subtitles** (subtitles
+must be enabled in the game), so the voice language does not affect it.
 Observations written by the observer are in English; dialogue and option labels stay
 in Spanish, exactly as on screen. The agent writes its reasoning in the run's
 `output_language` (Spanish by default), which is what the overlay will show.
