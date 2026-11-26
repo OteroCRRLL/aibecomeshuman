@@ -69,6 +69,26 @@ def test_cli_play_and_budget(project_dir, capsys) -> None:
     assert "Project spend: $0.0000" in capsys.readouterr().out
 
 
+def test_dotenv_loads_without_overriding(tmp_path, monkeypatch) -> None:
+    from aibecomeshuman.cli.main import load_dotenv
+
+    (tmp_path / ".env").write_text(
+        "# comment\nAIBH_TEST_A='from-file'\nAIBH_TEST_B=from-file\nAIBH_TEST_EMPTY=\n",
+        encoding="utf-8",
+    )
+    monkeypatch.delenv("AIBH_TEST_A", raising=False)
+    monkeypatch.setenv("AIBH_TEST_B", "already-set")
+    monkeypatch.delenv("AIBH_TEST_EMPTY", raising=False)
+    load_dotenv(tmp_path / ".env")
+
+    import os
+
+    assert os.environ["AIBH_TEST_A"] == "from-file"
+    assert os.environ["AIBH_TEST_B"] == "already-set"
+    assert "AIBH_TEST_EMPTY" not in os.environ
+    monkeypatch.delenv("AIBH_TEST_A")
+
+
 def test_cli_premium_run_refused_without_unlock(project_dir, capsys) -> None:
     scenario = str(REPO_ROOT / "scenarios" / "tram-stop.toml")
     assert main(["--root", str(project_dir), "play", scenario, "-p", "video-claude"]) == 2
