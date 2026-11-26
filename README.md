@@ -53,6 +53,20 @@ uv run aibh ping -p default -r decider_fast   # Haiku
 uv run pytest -m live                         # contract tests against the API
 ```
 
+### Control panel
+
+```powershell
+uv run aibh ui
+```
+
+Opens a local web page (only reachable from your own PC, at `http://127.0.0.1:8765`) to:
+play scenarios with any profile and directive and watch the decisions live, browse past
+runs, see spend against the caps, change the budget caps and the model used for each role,
+and read the character sheets and directives. Settings are saved to the same files in
+`config/`, after checking they are valid. API keys are never shown.
+
+### Command line
+
 Play a scripted scene (see [scenarios/README.md](scenarios/README.md)):
 
 ```powershell
@@ -88,6 +102,8 @@ src/aibecomeshuman/
   budget.py        cost tracking and budget caps
   prompts.py       layered system prompt
   play.py          scenario runner
+  tomlpatch.py     edits config files in place, keeping comments
+  ui/              local control panel (web server + single page)
   cli/             the aibh command
 tests/             unit/ · integration/ · contract/ (live)
 docs/              architecture and dev log

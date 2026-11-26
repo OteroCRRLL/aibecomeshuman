@@ -1,0 +1,425 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>aibecomeshuman · Control panel</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --panel: #ffffff; --text: #1d2330; --muted: #667085; --line: #e3e6eb;
+    --accent: #2f6fde; --accent-soft: #e8f0fd; --ok: #1f8a4c; --ok-soft: #e6f4ec;
+    --warn: #b26a00; --warn-soft: #fdf2e0; --bad: #c2362f; --bad-soft: #fbe9e8;
+    --stance: #6a3fc2; --stance-soft: #f0eafb;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #12151b; --panel: #1b1f27; --text: #e6e9ef; --muted: #98a2b3; --line: #2c323d;
+      --accent: #6b9cff; --accent-soft: #1d2a44; --ok: #4cc283; --ok-soft: #15301f;
+      --warn: #f0a63a; --warn-soft: #36280f; --bad: #ff7a70; --bad-soft: #3a1a18;
+      --stance: #b593ff; --stance-soft: #2a2140;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  header { background: var(--panel); border-bottom: 1px solid var(--line); padding: 12px 20px;
+           display: flex; flex-wrap: wrap; gap: 12px 24px; align-items: center; }
+  header h1 { font-size: 17px; margin: 0; }
+  .status { display: flex; gap: 18px; flex-wrap: wrap; color: var(--muted); font-size: 13px; }
+  .pill { padding: 2px 8px; border-radius: 999px; font-size: 12px; font-weight: 600; }
+  .pill.ok { background: var(--ok-soft); color: var(--ok); }
+  .pill.bad { background: var(--bad-soft); color: var(--bad); }
+  .pill.warn { background: var(--warn-soft); color: var(--warn); }
+  .pill.info { background: var(--accent-soft); color: var(--accent); }
+  .meter { width: 140px; height: 8px; background: var(--line); border-radius: 4px;
+           overflow: hidden; display: inline-block; vertical-align: middle; }
+  .meter > div { height: 100%; background: var(--accent); }
+  nav { display: flex; gap: 4px; padding: 0 20px; background: var(--panel);
+        border-bottom: 1px solid var(--line); overflow-x: auto; }
+  nav button { background: none; border: 0; padding: 10px 14px; color: var(--muted);
+               font: inherit; cursor: pointer; border-bottom: 2px solid transparent; }
+  nav button.active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
+  main { max-width: 980px; margin: 0 auto; padding: 20px 16px 60px; }
+  section { display: none; } section.active { display: block; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+          padding: 16px; margin-bottom: 16px; }
+  .card h2 { font-size: 15px; margin: 0 0 12px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }
+  label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+  select, input[type=number] { width: 100%; padding: 7px 9px; border: 1px solid var(--line);
+          border-radius: 6px; background: var(--bg); color: var(--text); font: inherit; }
+  .btn { background: var(--accent); color: #fff; border: 0; border-radius: 6px;
+         padding: 8px 16px; font: inherit; font-weight: 600; cursor: pointer; }
+  .btn:disabled { opacity: .5; cursor: default; }
+  .row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-top: 12px; }
+  .hint { color: var(--muted); font-size: 13px; }
+  .error { color: var(--bad); font-size: 13px; white-space: pre-wrap; }
+  .transcript { display: flex; flex-direction: column; gap: 8px; }
+  .ev { padding: 8px 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel); }
+  .ev .id { color: var(--muted); font-size: 12px; margin-right: 6px; font-family: ui-monospace, monospace; }
+  .ev.obs { color: var(--muted); font-style: italic; }
+  .ev.dialogue .speaker { font-weight: 600; }
+  .ev.outcome { border-left: 3px solid var(--muted); }
+  .ev.scene { background: var(--accent-soft); border-color: transparent; font-weight: 600; }
+  .ev.stance { background: var(--stance-soft); border-color: transparent; }
+  .ev.stance .tag { color: var(--stance); font-weight: 700; font-size: 12px; text-transform: uppercase; }
+  .ev.choice { border: 1px solid var(--accent); }
+  .ev.choice ol { margin: 6px 0 0; padding-left: 0; list-style: none; }
+  .ev.choice li { padding: 4px 8px; border-radius: 6px; margin: 2px 0; }
+  .ev.choice li.chosen { background: var(--ok-soft); color: var(--ok); font-weight: 600; }
+  .ev.choice li.late { text-decoration: underline dotted; }
+  .reason { margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--line); }
+  .badges { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
+  .ev.banner { background: var(--warn-soft); color: var(--warn); border-color: transparent; }
+  .ev.fail { background: var(--bad-soft); color: var(--bad); border-color: transparent; }
+  .summary { font-weight: 600; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th, td { text-align: left; padding: 8px; border-bottom: 1px solid var(--line); }
+  tbody tr { cursor: pointer; } tbody tr:hover { background: var(--accent-soft); }
+  .table-wrap { overflow-x: auto; }
+  pre { white-space: pre-wrap; font: 13px/1.5 ui-monospace, monospace; background: var(--bg);
+        padding: 12px; border-radius: 8px; border: 1px solid var(--line); margin: 0; }
+  details { margin-bottom: 10px; } summary { cursor: pointer; font-weight: 600; padding: 4px 0; }
+</style>
+</head>
+<body>
+<header>
+  <h1>aibecomeshuman</h1>
+  <div class="status" id="status">Loading…</div>
+</header>
+<nav id="tabs">
+  <button data-tab="play" class="active">Play</button>
+  <button data-tab="runs">Runs</button>
+  <button data-tab="settings">Settings</button>
+  <button data-tab="prompts">Prompts</button>
+</nav>
+<main>
+  <section id="play" class="active">
+    <div class="card">
+      <h2>Play a scenario</h2>
+      <div class="grid">
+        <div><label for="scenario">Scenario</label><select id="scenario"></select></div>
+        <div><label for="profile">Run profile</label><select id="profile"></select></div>
+        <div><label for="directive">Directive</label><select id="directive"></select></div>
+      </div>
+      <p class="hint" id="profile-desc"></p>
+      <div class="row">
+        <label id="unlock-wrap" style="display:none;margin:0">
+          <input type="checkbox" id="unlock"> Unlock premium (expensive) models for this run
+        </label>
+      </div>
+      <div class="row">
+        <button class="btn" id="play-btn">▶ Play</button>
+        <span class="hint" id="play-state"></span>
+      </div>
+      <div class="error" id="play-error"></div>
+    </div>
+    <div class="transcript" id="live"></div>
+  </section>
+
+  <section id="runs">
+    <div class="card">
+      <h2>Past runs</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Run</th><th>Scene</th><th>Profile</th><th>Status</th><th>Decisions</th><th>Cost</th></tr></thead>
+          <tbody id="runs-body"></tbody>
+        </table>
+      </div>
+    </div>
+    <div class="transcript" id="run-view"></div>
+  </section>
+
+  <section id="settings">
+    <div class="card">
+      <h2>Budget caps (USD)</h2>
+      <div class="grid">
+        <div><label for="cap-project">Whole project</label><input type="number" id="cap-project" step="0.5" min="0"></div>
+        <div><label for="cap-run">Per run</label><input type="number" id="cap-run" step="0.05" min="0"></div>
+        <div><label for="warn">Warn at (fraction of a cap)</label><input type="number" id="warn" step="0.05" min="0.05" max="1"></div>
+      </div>
+      <div class="row"><button class="btn" id="save-budget">Save budget</button><span class="hint" id="budget-msg"></span></div>
+    </div>
+    <div id="profiles"></div>
+  </section>
+
+  <section id="prompts">
+    <div class="card"><h2>Characters</h2><div id="characters"></div></div>
+    <div class="card"><h2>Directives</h2><div id="directives"></div></div>
+    <p class="hint">To edit these texts, open the files in the <code>prompts/</code> folder.</p>
+  </section>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+function el(tag, attrs = {}, ...children) {
+  const node = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (k === "class") node.className = v;
+    else if (k.startsWith("on")) node.addEventListener(k.slice(2), v);
+    else node.setAttribute(k, v);
+  }
+  for (const child of children.flat()) {
+    if (child === null || child === undefined || child === false) continue;
+    node.append(child instanceof Node ? child : document.createTextNode(String(child)));
+  }
+  return node;
+}
+async function api(path, options = {}) {
+  const res = await fetch(path, { headers: { "Content-Type": "application/json" }, ...options });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body.detail || res.statusText);
+  return body;
+}
+const usd = (v) => "$" + Number(v || 0).toFixed(4);
+let OPTIONS = null;
+
+// -- tabs ---------------------------------------------------------------------
+document.querySelectorAll("#tabs button").forEach((btn) => btn.addEventListener("click", () => {
+  document.querySelectorAll("#tabs button").forEach((b) => b.classList.toggle("active", b === btn));
+  document.querySelectorAll("main section").forEach((s) => s.classList.toggle("active", s.id === btn.dataset.tab));
+  if (btn.dataset.tab === "runs") loadRuns();
+}));
+
+// -- status bar ---------------------------------------------------------------
+async function loadStatus() {
+  const s = await api("/api/status");
+  const cap = s.budget.project_cap_usd;
+  const pct = cap > 0 ? Math.min(100, (s.project_spent_usd / cap) * 100) : 0;
+  $("status").replaceChildren(
+    el("span", {}, "API key: ",
+      el("span", { class: "pill " + (s.api_key_configured ? "ok" : "warn") },
+        s.api_key_configured ? "configured" : "not found")),
+    el("span", {}, `Project spend: ${usd(s.project_spent_usd)} of $${cap.toFixed(2)} `,
+      el("span", { class: "meter" }, el("div", { style: `width:${pct}%` }))),
+    el("span", {}, `Per run cap: $${s.budget.run_cap_usd.toFixed(2)}`),
+  );
+}
+
+// -- transcript renderer (shared by live play and past runs) -------------------
+function makeRenderer(container) {
+  const state = { cost: 0, choices: {} };
+  container.replaceChildren();
+  return function render(ev) {
+    const p = ev.payload;
+    switch (ev.type) {
+      case "scene.started":
+        container.append(el("div", { class: "ev scene" },
+          `${p.title} · ${p.character} · directive: ${p.directive}`,
+          p.location ? el("div", { class: "hint" }, p.location) : null));
+        break;
+      case "scene.perceived":
+        if (p.kind === "dialogue") {
+          container.append(el("div", { class: "ev dialogue" }, el("span", { class: "id" }, p.entry_id),
+            el("span", { class: "speaker" }, p.speaker + ": "), `“${p.text}”`));
+        } else {
+          container.append(el("div", { class: "ev " + (p.kind === "outcome" ? "outcome" : "obs") },
+            el("span", { class: "id" }, p.entry_id), p.text));
+        }
+        break;
+      case "stance.updated":
+        container.append(el("div", { class: "ev stance" }, el("div", { class: "tag" }, "Stance"), p.stance,
+          p.approach_keywords && p.approach_keywords.length
+            ? el("div", { class: "badges" }, p.approach_keywords.map((k) => el("span", { class: "pill info" }, k)))
+            : null,
+          p.concerns && p.concerns.length ? el("div", { class: "hint" }, "Concerns: " + p.concerns.join(" · ")) : null));
+        break;
+      case "stance.failed":
+        container.append(el("div", { class: "ev fail" }, "Stance update failed (model error or budget); keeping the previous one."));
+        break;
+      case "choice.presented": {
+        const list = el("ol", {}, p.options.map((o) => el("li", { "data-id": o.id }, `${o.id}) ${o.label}`)));
+        const card = el("div", { class: "ev choice" },
+          el("strong", {}, p.timed ? `Timed choice · ${p.seconds} s` : "Choice"), list);
+        state.choices[p.id] = card;
+        container.append(card);
+        break;
+      }
+      case "decision.made": {
+        const card = state.choices[p.choice_id];
+        if (!card) break;
+        card.querySelectorAll("li").forEach((li) => {
+          li.classList.toggle("chosen", li.dataset.id === p.option_id);
+          li.classList.toggle("late", li.dataset.id === p.late_option_id && p.late_option_id !== p.option_id);
+        });
+        const badges = [];
+        if (p.source === "fallback") {
+          badges.push(el("span", { class: "pill warn" }, p.timed_out ? "fallback: too slow" : "fallback"));
+        } else {
+          badges.push(el("span", { class: "pill info" }, p.role));
+        }
+        if (p.latency_ms) badges.push(el("span", { class: "pill info" }, `${Math.round(p.latency_ms)} ms`));
+        if (p.role === "decider") {
+          badges.push(el("span", { class: "pill " + (p.evidence_ok ? "ok" : "bad") },
+            p.evidence_ok ? `evidence: ${p.evidence.join(", ")}` : "evidence missing/invalid"));
+        }
+        if (p.confidence !== null && p.confidence !== undefined) {
+          badges.push(el("span", { class: "pill info" }, `confidence ${Math.round(p.confidence * 100)}%`));
+        }
+        if (p.late_option_id) badges.push(el("span", { class: "pill warn" }, `late answer was ${p.late_option_id}`));
+        card.append(el("div", { class: "reason" }, p.reasoning || el("span", { class: "hint" }, "(no reasoning)"),
+          el("div", { class: "badges" }, badges),
+          p.error ? el("div", { class: "error" }, p.error) : null));
+        break;
+      }
+      case "directive.changed":
+        container.append(el("div", { class: "ev banner" }, `Directive changed: ${p.from} → ${p.to}`));
+        break;
+      case "budget.warning":
+        container.append(el("div", { class: "ev banner" },
+          `Budget warning: ${p.scope} spend ${usd(p.spent_usd)} of $${p.cap_usd.toFixed(2)}`));
+        break;
+      case "llm.call":
+        if (p.ok) state.cost += p.cost_usd || 0;
+        else container.append(el("div", { class: "ev fail" }, `Model call failed (${p.role}): ${p.error}`));
+        break;
+      case "run.finished":
+        container.append(el("div", { class: "ev summary" },
+          `Run finished: ${p.status} · cost ${usd(state.cost)}`,
+          p.error ? el("div", { class: "error" }, p.error) : null));
+        break;
+    }
+  };
+}
+
+// -- play tab -------------------------------------------------------------------
+function fillSelect(select, items, value) {
+  select.replaceChildren(...items.map(([v, text]) => el("option", { value: v }, text)));
+  if (value !== undefined) select.value = value;
+}
+function onProfileChange() {
+  const prof = OPTIONS.profiles.find((p) => p.name === $("profile").value);
+  if (!prof) return;
+  $("profile-desc").textContent = prof.description;
+  $("unlock-wrap").style.display = prof.locked ? "block" : "none";
+  if (!prof.locked) $("unlock").checked = false;
+  fillSelect($("directive"),
+    [["", `Profile default (${prof.directive})`], ...OPTIONS.directives.map((d) => [d, d])], "");
+}
+async function loadOptions() {
+  OPTIONS = await api("/api/options");
+  const keepScenario = $("scenario").value, keepProfile = $("profile").value;
+  fillSelect($("scenario"), OPTIONS.scenarios.map((s) => [s.file, `${s.title} (${s.character})`]),
+    keepScenario || undefined);
+  fillSelect($("profile"), OPTIONS.profiles.map((p) => [p.name, p.name + (p.locked ? " 🔒" : "")]),
+    keepProfile || (OPTIONS.profiles.find((p) => p.name === "offline") ? "offline" : undefined));
+  onProfileChange();
+  renderSettings();
+}
+$("profile").addEventListener("change", onProfileChange);
+
+$("play-btn").addEventListener("click", async () => {
+  $("play-error").textContent = "";
+  $("play-btn").disabled = true;
+  $("play-state").textContent = "Starting…";
+  const render = makeRenderer($("live"));
+  try {
+    const { job_id } = await api("/api/play", { method: "POST", body: JSON.stringify({
+      scenario: $("scenario").value, profile: $("profile").value,
+      directive: $("directive").value || null, unlock_premium: $("unlock").checked,
+    }) });
+    let after = 0;
+    while (true) {
+      const job = await api(`/api/jobs/${job_id}?after=${after}`);
+      job.events.forEach(render);
+      after = job.next;
+      $("play-state").textContent = job.status === "running" ? "Playing…" : `Done (${job.status})`;
+      if (job.status !== "running") {
+        if (job.error) $("play-error").textContent = job.error;
+        break;
+      }
+      await new Promise((r) => setTimeout(r, 400));
+    }
+  } catch (e) {
+    $("play-error").textContent = e.message;
+    $("play-state").textContent = "";
+  } finally {
+    $("play-btn").disabled = false;
+    loadStatus();
+  }
+});
+
+// -- runs tab -------------------------------------------------------------------
+async function loadRuns() {
+  const rows = await api("/api/runs");
+  $("runs-body").replaceChildren(...rows.map((r) => el("tr", { onclick: () => showRun(r.run_id) },
+    el("td", {}, r.run_id), el("td", {}, r.scene || "—"), el("td", {}, r.profile),
+    el("td", {}, el("span", { class: "pill " + (r.status === "ok" ? "ok" : r.status === "running" ? "info" : "bad") }, r.status)),
+    el("td", {}, r.decisions), el("td", {}, usd(r.cost_usd)))));
+  if (!rows.length) $("runs-body").append(el("tr", {}, el("td", { colspan: 6, class: "hint" }, "No runs yet.")));
+}
+async function showRun(runId) {
+  const events = await api(`/api/runs/${encodeURIComponent(runId)}/events`);
+  const render = makeRenderer($("run-view"));
+  $("run-view").append(el("div", { class: "hint" }, `Run ${runId}`));
+  events.forEach(render);
+  $("run-view").scrollIntoView({ behavior: "smooth" });
+}
+
+// -- settings tab ---------------------------------------------------------------
+async function loadBudget() {
+  const s = await api("/api/status");
+  $("cap-project").value = s.budget.project_cap_usd;
+  $("cap-run").value = s.budget.run_cap_usd;
+  $("warn").value = s.budget.warn_ratio;
+}
+$("save-budget").addEventListener("click", async () => {
+  $("budget-msg").textContent = "";
+  try {
+    await api("/api/settings/budget", { method: "PUT", body: JSON.stringify({
+      project_cap_usd: Number($("cap-project").value), run_cap_usd: Number($("cap-run").value),
+      warn_ratio: Number($("warn").value),
+    }) });
+    $("budget-msg").textContent = "Saved ✓";
+    loadStatus();
+  } catch (e) { $("budget-msg").textContent = e.message; }
+});
+function modelLabel(m) {
+  const price = m.paid ? `$${m.price_input_per_mtok}/$${m.price_output_per_mtok} per MTok` : "free";
+  return `${m.name} · ${price}${m.locked ? " · 🔒 locked" : ""}`;
+}
+function renderSettings() {
+  $("profiles").replaceChildren(...OPTIONS.profiles.map((prof) => {
+    const selects = {};
+    const grid = el("div", { class: "grid" }, OPTIONS.roles.filter((r) => r in prof.roles).map((role) => {
+      const sel = el("select", {});
+      fillSelect(sel, OPTIONS.models.map((m) => [m.name, modelLabel(m)]), prof.roles[role]);
+      selects[role] = sel;
+      return el("div", {}, el("label", {}, role), sel);
+    }));
+    const msg = el("span", { class: "hint" });
+    const save = el("button", { class: "btn", onclick: async () => {
+      msg.textContent = "";
+      const roles = Object.fromEntries(Object.entries(selects).map(([r, s]) => [r, s.value]));
+      try {
+        await api(`/api/settings/runs/${encodeURIComponent(prof.name)}/roles`, { method: "PUT", body: JSON.stringify(roles) });
+        msg.textContent = "Saved ✓";
+        loadOptions();
+      } catch (e) { msg.textContent = e.message; }
+    } }, "Save models");
+    return el("div", { class: "card" },
+      el("h2", {}, `Run profile: ${prof.name}${prof.locked ? " 🔒" : ""}`),
+      el("p", { class: "hint" }, prof.description), grid, el("div", { class: "row" }, save, msg));
+  }));
+}
+
+// -- prompts tab ----------------------------------------------------------------
+async function loadPrompts() {
+  const data = await api("/api/prompts");
+  $("characters").replaceChildren(...Object.entries(data.characters).map(([name, text]) =>
+    el("details", {}, el("summary", {}, name), el("pre", {}, text))));
+  $("directives").replaceChildren(...Object.entries(data.directives).map(([name, d]) =>
+    el("details", {}, el("summary", {}, `${name} · ${d.meta.priority || "flavor"}`), el("pre", {}, d.text))));
+}
+
+// -- boot -------------------------------------------------------------------------
+(async () => {
+  try {
+    await Promise.all([loadStatus(), loadOptions(), loadBudget(), loadPrompts()]);
+  } catch (e) {
+    $("status").replaceChildren(el("span", { class: "error" }, "Could not load: " + e.message));
+  }
+})();
+</script>
+</body>
+</html>

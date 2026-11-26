@@ -82,6 +82,23 @@ often they agree.
 - Expensive models are `locked = true` and need `--unlock-premium`. Development runs
   use Claude Haiku in every role; `video-claude` is the locked profile for the video.
 
+## Control panel
+
+`aibh ui` serves a local web app on `127.0.0.1` (FastAPI + one static page, no external
+assets). It grows with the project:
+
+| When | What it shows |
+|---|---|
+| Now | Play scenarios live, past runs, budget, model per role, prompts (read-only) |
+| Phase 2 | Character memory and personality evolution |
+| Phase 3 | What the AI "saw" in recordings |
+| Phases 5–6 | Live control: modes, kill switch, directive hot-swap |
+| Phase 7 | OBS overlay (another page served by the same app) |
+
+Rules: config files stay the source of truth; every edit is validated against the whole
+project and rolled back if invalid; only one run plays at a time; API keys never reach
+the browser.
+
 ## Game language
 
 The game will run with **English voices and Spanish text**. The agent does not hear

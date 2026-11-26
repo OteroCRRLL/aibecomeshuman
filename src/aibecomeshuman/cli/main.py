@@ -5,6 +5,7 @@
     aibh ping -p offline -r decider         run with a single call to a role's model
     aibh play scenarios/<file>.toml         play a scenario (default run profile)
     aibh budget                             show spend against the budget caps
+    aibh ui                                 open the local control panel in the browser
     aibh events runs/<folder>               print a run's event log
 
 Runs that use locked (expensive) models need --unlock-premium.
@@ -145,6 +146,13 @@ def cmd_budget(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_ui(args: argparse.Namespace) -> int:
+    from aibecomeshuman.ui.server import serve
+
+    serve(Path(args.root) if args.root else None, port=args.port, open_browser=not args.no_browser)
+    return 0
+
+
 def cmd_events(args: argparse.Namespace) -> int:
     path = Path(args.run_dir)
     if path.is_dir():
@@ -195,6 +203,11 @@ def build_parser() -> argparse.ArgumentParser:
     budget = sub.add_parser("budget", help="show spend against the budget caps")
     budget.add_argument("--last", type=int, default=15, help="how many paid runs to list")
     budget.set_defaults(func=cmd_budget)
+
+    ui = sub.add_parser("ui", help="open the local control panel in the browser")
+    ui.add_argument("--port", type=int, default=8765)
+    ui.add_argument("--no-browser", action="store_true", help="do not open the browser")
+    ui.set_defaults(func=cmd_ui)
 
     events = sub.add_parser("events", help="print a run's event log")
     events.add_argument("run_dir")
