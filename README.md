@@ -80,6 +80,11 @@ runs/              salidas de partidas (no se suben a git)
   perfil nuevo en `config/models/`.
 - **Directiva**: crea `prompts/directives/<nombre>.md` y pon `directive = "<nombre>"` en el run.
 
+## Licencia
+
+[MIT](LICENSE): el código de este repositorio se puede usar, copiar y modificar
+libremente, manteniendo el aviso de copyright.
+
 ## Aviso
 
 Proyecto de fans sin relación con los titulares de *Detroit: Become Human*. El

@@ -3,6 +3,8 @@ name = "aibecomeshuman"
 version = "0.1.0"
 description = "Agente de IA que juega a Detroit: Become Human con control híbrido, memoria y personalidad evolutiva."
 readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
 requires-python = ">=3.12"
 dependencies = [
     "pydantic>=2.9",
