@@ -303,9 +303,11 @@ class ScenarioRunner:
 
         self.ctx.add("decision", f"I chose: {label}")
         outcome = step.outcome_of(decision.option_id)
-        entry = self.ctx.add("outcome", outcome)
-        self._perceived(entry.id, "outcome", outcome)
-        self._echo(f"  [{entry.id}] {outcome}")
+        # Scenes taken from recordings have no separate outcome: the next steps show it.
+        if outcome:
+            entry = self.ctx.add("outcome", outcome)
+            self._perceived(entry.id, "outcome", outcome)
+            self._echo(f"  [{entry.id}] {outcome}")
         self._update_stance()
 
 

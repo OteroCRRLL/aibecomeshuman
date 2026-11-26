@@ -16,17 +16,19 @@ Architecture and decisions: [docs/architecture.md](docs/architecture.md).
 
 ## Status
 
-**Phase 1, decisions without the game.** The agent plays scripted scenes through its
-character sheet, a scene stance and the run directive, with cost tracking and budget caps.
-Development uses one AI (Claude Haiku) plus a free fake model; the strong models stay
-locked until the system is ready.
+**Phase 3, perception from recordings.** The agent turns a game recording into what it
+would know (dialogue with speakers, choices and what was picked, its own display), with
+menus and spoilers filtered out, and can play the recorded scene deciding on its own.
+Before that: scripted scenes, memory and an evolving personality. Development uses one AI
+(Claude Haiku) plus a free fake model; the strong models stay locked until the system is
+ready.
 
 | Phase | Scope | Status |
 |---|---|---|
 | 0 | Foundations | ✅ (real-model ping pending) |
 | 1 | Scenario simulator + decider + directives + budget | ✅ |
 | 2 | Memory and personality (campaigns, chains of scenes) | ✅ |
-| 3 | Offline perception (recordings) | |
+| 3 | Offline perception (recordings) | ✅ |
 | 4 | Anti-metagaming guard and evaluations | |
 | 5 | Shadow-mode control (the AI suggests, you execute) | |
 | 6 | Live autonomy | |
@@ -60,8 +62,9 @@ uv run aibh ui
 ```
 
 Opens a local web page (only reachable from your own PC, at `http://127.0.0.1:8765`) to:
-play scenarios with any profile and directive and watch the decisions live, browse past
-runs, see spend against the caps, change the budget caps and the model used for each role,
+play scenarios with any profile and directive and watch the decisions live, analyse game
+recordings and see what the AI got from them (with frame thumbnails and a score against
+hand-made labels), browse memory and past runs, see spend against the caps, change the budget caps and the model used for each role,
 and read the character sheets and directives. Settings are saved to the same files in
 `config/`, after checking they are valid. API keys are never shown.
 
@@ -78,6 +81,20 @@ uv run aibh budget                                     # spend so far vs. the ca
 # A chain of scenes with memory kept in campaigns/test (a playthrough)
 uv run aibh play scenarios/chains/markus-week.toml -c test
 ```
+
+Read a game recording (kept in `data/recordings/`, never committed):
+
+```powershell
+uv run aibh perceive data/recordings/<file>.mkv --dry-run        # free: frames + cost estimate
+uv run aibh perceive data/recordings/<file>.mkv                  # ~$0.20 for 12 minutes (Haiku)
+uv run aibh perceive data/recordings/<file>.mkv --from 08:00 --to 09:00
+uv run aibh perceive data/recordings/<file>.mkv --rebuild runs/<folder>   # cheap re-run
+uv run aibh play runs/<folder>/scenario.toml                     # the AI plays the recording
+```
+
+The run folder gets `transcript.md` (what the agent knows), the keyframes, every
+observation, a draft `scenario.toml`, and `evaluation.json` when the recording has a
+`<file>.labels.toml` with hand-made labels next to it.
 
 Expensive models are **locked**: a run that uses them (e.g. `-p video-claude`) needs
 `--unlock-premium`. Budget caps live in `config/default.toml` (`[budget]`).
@@ -101,6 +118,7 @@ src/aibecomeshuman/
   llm/             model port, adapters, recording/cassettes
   cognition/       scene context, decider (stance, decisions, fallback), end-of-scene reflection
   memory/          long-term memory and personality: models, storage, prompt rendering
+  perception/      recordings -> keyframes -> observer -> redaction -> transcript
   env/             environments (today: scripted scenarios)
   run/             run session and manifest
   budget.py        cost tracking and budget caps

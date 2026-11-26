@@ -64,6 +64,42 @@ often they agree.
 - Opus profiles set `refusal_fallback = true`: if the model refuses a request, the API
   retries it server-side on a fallback model. Haiku does not support it.
 
+## Perception (phase 3: recordings)
+
+```
+recording -> keyframes (local, free) -> observer (vision model, one frame each)
+          -> redaction -> transcript -> speakers & picks (text model, whole conversation)
+          -> draft scenario (the agent can play the recording) + score against labels
+```
+
+- **Keyframes** are chosen locally with OpenCV from one frame per second: a choice menu
+  appears (the coloured Y/X/B/A letters lined up in a column), a new subtitle (white
+  text with a dark outline, compared to the size of the text), a new shot, or a 4 s
+  heartbeat. About 340 of 720 frames for a 12-minute mission (~$0.20 with Haiku).
+  The menu check takes milliseconds, so live play (phase 5–6) can use it as the trigger
+  for timed choices.
+- **Observer**: one structured observation per frame (screen type, short description,
+  subtitles with a speaker guess, choice options with button, locked and highlighted,
+  the protagonist's display, tutorial text, names seen). Several workers read contiguous
+  stretches of the video, each keeping its own context (previous description, recent
+  lines, known people, a just-picked option).
+- **Redaction** is where hiding happens: the agent never sees images, only text built
+  from observations. Menus, the flowchart, loading screens and tutorial hints are
+  dropped, and so is any text matching `[perception] hidden_patterns` (for example the
+  "software instability" notice). The probability of success stays: it is Connor's own
+  display.
+- **Transcript**: each subtitle, display text and menu once; menu frames grouped into one
+  choice; the pick is the highlighted option when a frame caught it. Fixed rules for
+  speakers: the first line after a pick is the protagonist's; a line without a leading
+  dash after an unfinished line is the same speaker; all-caps lines are display text.
+- **Speakers and picks**: the game shows no speaker names, and frames often show the
+  listener. A text-only pass over the whole conversation attributes every line, and
+  fills in picks the frames missed; first by matching words between the options and the
+  next line, then by the model.
+- **Evaluation**: `<recording>.labels.toml` (hand-made, local) lists choices, picks,
+  lines with speakers, and texts that must never reach the agent. First mission:
+  10/10 choices, 8/8 picks, 19/19 lines, 14–15/15 speakers, 0 leaks.
+
 ## Anti-metagaming (summary)
 
 1. **Perception**: hide the end-of-chapter flowchart, menus, trophies and statistics.
@@ -122,7 +158,7 @@ assets). It grows with the project:
 |---|---|
 | Phase 1 | Play scenarios live, past runs, budget, model per role, prompts (read-only) |
 | Phase 2 ✅ | Chains and campaigns in Play; Memory tab with personality evolution |
-| Phase 3 | What the AI "saw" in recordings |
+| Phase 3 ✅ | Recordings tab: analyse a recording, transcript with thumbnails, score |
 | Phases 5–6 | Live control: modes, kill switch, directive hot-swap |
 | Phase 7 | OBS overlay (another page served by the same app) |
 
@@ -160,9 +196,14 @@ used only once the system is ready, starting with a small pilot to measure real 
 - **Knowledge is separate per character:** each protagonist only remembers what it has
   lived itself. There is no shared "player" memory.
 
+## Game setup
+
+1920×1080, Spanish voices and text with subtitles on, casual difficulty (QTEs are the
+operator's, so they should not decide the story), Xbox-style controller only (the AI
+will use a virtual one, and on-screen prompts stay consistent), Steam achievement
+notifications off. The game has no option to show speaker names in subtitles.
+
 ## Open questions
 
-- Game resolution.
-- Controller or keyboard for manual control (the AI will use a virtual controller).
 - Operator voice narration: allowed or not.
 - GPU for local models (optional, for free testing).

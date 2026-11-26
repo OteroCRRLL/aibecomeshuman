@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import threading
 import uuid
 from pathlib import Path
@@ -73,6 +74,19 @@ class PlayRequest(BaseModel):
     unlock_premium: bool = False
     # Keep memory in campaigns/<name> (a playthrough). Empty = memory for this run only.
     campaign: str | None = None
+
+
+class PerceiveRequest(BaseModel):
+    # A file in the recordings folder (config: [perception] recordings_dir).
+    recording: str
+    profile: str = "default"
+    character: str = "connor"
+    start: str | None = None  # "07:30"
+    end: str | None = None
+    dry_run: bool = False
+    unlock_premium: bool = False
+    # Rebuild the transcript from this earlier run's observations instead of re-reading frames.
+    rebuild_from: str | None = None
 
 
 class BudgetUpdate(BaseModel):
@@ -146,6 +160,50 @@ def create_app(root: Path | None = None) -> FastAPI:
         if not store.dir.is_dir():
             raise HTTPException(404, "campaign not found")
         return store
+
+    def recording_path(name: str) -> Path:
+        from aibecomeshuman.perception.video import VIDEO_SUFFIXES
+
+        root = project().recordings_dir.resolve()
+        path = (root / name).resolve()
+        if path.parent != root or path.suffix.lower() not in VIDEO_SUFFIXES:
+            raise HTTPException(400, "invalid recording")
+        if not path.is_file():
+            raise HTTPException(404, "recording not found")
+        return path
+
+    def run_dir(run_id: str) -> Path:
+        runs_root = project().runs_dir.resolve()
+        path = (runs_root / run_id).resolve()
+        if path.parent != runs_root or not path.is_dir():
+            raise HTTPException(404, "run not found")
+        return path
+
+    def start_job(session: RunSession, work: Any) -> dict[str, str]:
+        """Run `work(session)` in a background thread, streaming its events to a job."""
+        current = active["job"]
+        if current is not None and current.status == "running":
+            raise HTTPException(409, "a run is already in progress")
+        job = Job()
+        jobs[job.id] = job
+        active["job"] = job
+
+        def run() -> None:
+            try:
+                with session:
+                    assert session.events is not None and session.dir is not None
+                    job.run_id = session.dir.name
+                    for event in session.events:
+                        job.push(event)
+                    session.events.subscribe("*", job.push)
+                    work(session)
+                job.status = "ok"
+            except Exception as e:  # reported to the UI; the run manifest records it too
+                job.error = f"{type(e).__name__}: {e}"
+                job.status = "error"
+
+        threading.Thread(target=run, daemon=True).start()
+        return {"job_id": job.id}
 
     def validated_patch(path: Path, section: str | None, updates: dict[str, Any]) -> None:
         original = patch_file(path, section, updates)
@@ -269,6 +327,9 @@ def create_app(root: Path | None = None) -> FastAPI:
                 for event in read_events(events_path):
                     if event.type == "scene.started" and scene is None:
                         scene = event.payload.get("title")
+                    elif event.type == "perception.started" and scene is None:
+                        dry = " (dry run)" if event.payload.get("dry_run") else ""
+                        scene = f"Recording: {event.payload.get('video')}{dry}"
                     elif event.type == "decision.made":
                         decisions += 1
             rows.append(
@@ -296,9 +357,6 @@ def create_app(root: Path | None = None) -> FastAPI:
 
     @app.post("/api/play")
     def play(req: PlayRequest) -> dict[str, str]:
-        current = active["job"]
-        if current is not None and current.status == "running":
-            raise HTTPException(409, "a run is already in progress")
         refresh_env()
         p = project()
         campaign = (req.campaign or "").strip() or None
@@ -309,27 +367,91 @@ def create_app(root: Path | None = None) -> FastAPI:
             session = RunSession(p, req.profile, unlock_premium=req.unlock_premium)
         except ConfigError as e:
             raise HTTPException(400, str(e)) from e
+        return start_job(
+            session,
+            lambda s: play_scenarios(s, scenarios, directive=req.directive, campaign=campaign),
+        )
 
-        job = Job()
-        jobs[job.id] = job
-        active["job"] = job
+    # -- recordings (perception) --------------------------------------------------
 
-        def work() -> None:
+    @app.get("/api/recordings")
+    def recordings() -> list[dict[str, Any]]:
+        from aibecomeshuman.perception.evaluate import labels_path
+        from aibecomeshuman.perception.video import VIDEO_SUFFIXES, video_info
+
+        p = project()
+        folder = p.recordings_dir
+        files = (
+            sorted(f for f in folder.iterdir() if f.suffix.lower() in VIDEO_SUFFIXES)
+            if folder.is_dir()
+            else []
+        )
+        rows = []
+        for f in files:
             try:
-                with session:
-                    assert session.events is not None and session.dir is not None
-                    job.run_id = session.dir.name
-                    for event in session.events:
-                        job.push(event)
-                    session.events.subscribe("*", job.push)
-                    play_scenarios(session, scenarios, directive=req.directive, campaign=campaign)
-                job.status = "ok"
-            except Exception as e:  # reported to the UI; the run manifest records it too
-                job.error = f"{type(e).__name__}: {e}"
-                job.status = "error"
+                duration = round(video_info(f).duration_s)
+            except ConfigError:
+                duration = None
+            rows.append(
+                {
+                    "file": f.name,
+                    "size_mb": round(f.stat().st_size / 1e6),
+                    "duration_s": duration,
+                    "labels": labels_path(f).is_file(),
+                }
+            )
+        return rows
 
-        threading.Thread(target=work, daemon=True).start()
-        return {"job_id": job.id}
+    @app.post("/api/perceive")
+    def start_perception(req: PerceiveRequest) -> dict[str, str]:
+        from aibecomeshuman.perception.pipeline import finish_outputs, perceive, rebuild
+        from aibecomeshuman.perception.video import parse_time
+
+        refresh_env()
+        video = recording_path(req.recording)
+        source = run_dir(req.rebuild_from) if req.rebuild_from else None
+        try:
+            start, end = parse_time(req.start) or 0.0, parse_time(req.end)
+        except ValueError as e:
+            raise HTTPException(400, "times look like 07:30") from e
+        try:
+            session = RunSession(project(), req.profile, unlock_premium=req.unlock_premium)
+        except ConfigError as e:
+            raise HTTPException(400, str(e)) from e
+
+        def work(s: RunSession) -> None:
+            if source is not None:
+                result = rebuild(s, source, video, req.character)
+            else:
+                result = perceive(s, video, req.character, start, end, dry_run=req.dry_run)
+            if not req.dry_run:
+                finish_outputs(s, video, result, req.character, start, end)
+
+        return start_job(session, work)
+
+    @app.get("/api/runs/{run_id}/perception")
+    def run_perception(run_id: str) -> dict[str, Any]:
+        path = run_dir(run_id)
+        transcript = path / "transcript.json"
+        evaluation = path / "evaluation.json"
+        return {
+            "transcript": json.loads(transcript.read_text(encoding="utf-8"))
+            if transcript.is_file()
+            else [],
+            "evaluation": json.loads(evaluation.read_text(encoding="utf-8"))
+            if evaluation.is_file()
+            else None,
+            "has_observations": (path / "observations.jsonl").is_file(),
+        }
+
+    @app.get("/api/runs/{run_id}/frames/{name}")
+    def run_frame(run_id: str, name: str) -> FileResponse:
+        if not re.fullmatch(r"t\d{5}_[a-z]+\.jpg", name):
+            raise HTTPException(400, "invalid frame name")
+        path = run_dir(run_id) / "frames" / name
+        if not path.is_file():
+            raise HTTPException(404, "frame not found")
+        return FileResponse(path, media_type="image/jpeg")
 
     @app.get("/api/jobs/{job_id}")
     def job_status(job_id: str, after: int = 0) -> dict[str, Any]:

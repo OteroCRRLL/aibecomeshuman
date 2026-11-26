@@ -76,12 +76,33 @@ class MemorySettings(_Strict):
     max_facts_per_entity: int = Field(default=6, ge=1)
 
 
+class PerceptionSettings(_Strict):
+    # Recordings the panel lists (relative to the project root).
+    recordings_dir: Path = Path("data/recordings")
+    # One frame is checked every `sample_every_s`; only frames that changed go to the model.
+    sample_every_s: float = Field(default=1.0, gt=0)
+    # Send a frame anyway if nothing was sent for this long (catches slow changes).
+    heartbeat_s: float = Field(default=4.0, gt=0)
+    # Fraction of the small thumbnail that must change to count as a new shot. The camera
+    # moves almost all the time, so only big changes count; subtitles have their own check.
+    change_ratio: float = Field(default=0.4, gt=0, le=1)
+    # Frames darker than this mean brightness (0-255) are skipped (fades, loading).
+    dark_threshold: float = Field(default=12.0, ge=0)
+    # Width of the frames sent to the model (Claude reads up to ~1568 px wide).
+    frame_width: int = Field(default=1568, ge=320)
+    # Parallel model calls (each worker reads a contiguous stretch of the video).
+    workers: int = Field(default=4, ge=1, le=16)
+    # On-screen text matching these (case-insensitive regex) never reaches the agent.
+    hidden_patterns: list[str] = Field(default_factory=list)
+
+
 class AppConfig(_Strict):
     paths: PathsConfig = Field(default_factory=PathsConfig)
     llm: LLMSettings = Field(default_factory=LLMSettings)
     budget: BudgetSettings = Field(default_factory=BudgetSettings)
     timing: TimingSettings = Field(default_factory=TimingSettings)
     memory: MemorySettings = Field(default_factory=MemorySettings)
+    perception: PerceptionSettings = Field(default_factory=PerceptionSettings)
 
 
 class ModelProfile(_Strict):
@@ -151,6 +172,10 @@ class ProjectConfig(BaseModel):
     @property
     def campaigns_dir(self) -> Path:
         return self.path(self.app.paths.campaigns_dir)
+
+    @property
+    def recordings_dir(self) -> Path:
+        return self.path(self.app.perception.recordings_dir)
 
     def run_profile(self, name: str) -> RunProfile:
         try:

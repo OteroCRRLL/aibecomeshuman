@@ -92,6 +92,16 @@
   .list { display: flex; flex-direction: column; gap: 8px; }
   .item { padding: 8px 12px; border: 1px solid var(--line); border-radius: 8px; }
   .item .meta { color: var(--muted); font-size: 12px; }
+  .text-in { width: 100%; padding: 7px 9px; border: 1px solid var(--line); border-radius: 6px;
+             background: var(--bg); color: var(--text); font: inherit; }
+  .seen { display: grid; grid-template-columns: 52px 1fr 132px; gap: 10px; align-items: start; }
+  .seen .when { font: 12px ui-monospace, monospace; color: var(--muted); padding-top: 2px; }
+  .seen img { width: 132px; border-radius: 4px; display: block; }
+  .ev.hud { border-left: 3px solid var(--accent); font-size: 14px; }
+  .score { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+  .score div { padding: 8px 10px; border-radius: 8px; background: var(--bg); }
+  .score strong { display: block; font-size: 18px; }
+  @media (max-width: 560px) { .seen { grid-template-columns: 44px 1fr; } .seen img { display: none; } }
 </style>
 </head>
 <body>
@@ -101,6 +111,7 @@
 </header>
 <nav id="tabs">
   <button data-tab="play" class="active">Play</button>
+  <button data-tab="recordings">Recordings</button>
   <button data-tab="runs">Runs</button>
   <button data-tab="memory">Memory</button>
   <button data-tab="settings">Settings</button>
@@ -132,6 +143,36 @@
       <div class="error" id="play-error"></div>
     </div>
     <div class="transcript" id="live"></div>
+  </section>
+
+  <section id="recordings">
+    <div class="card">
+      <h2>What the AI sees in a recording</h2>
+      <p class="hint">Recordings live in <code>data/recordings/</code> (never uploaded). The AI reads
+        only the frames where something changes; menus, the end-of-chapter flowchart and hidden
+        texts never reach it.</p>
+      <div class="grid">
+        <div><label for="rec-file">Recording</label><select id="rec-file"></select></div>
+        <div><label for="rec-profile">Run profile</label><select id="rec-profile"></select></div>
+        <div><label for="rec-character">Protagonist</label><select id="rec-character"></select></div>
+        <div><label for="rec-from">From (mm:ss, optional)</label>
+          <input id="rec-from" placeholder="00:00" class="text-in"></div>
+        <div><label for="rec-to">To (mm:ss, optional)</label>
+          <input id="rec-to" placeholder="end" class="text-in"></div>
+      </div>
+      <p class="hint" id="rec-desc"></p>
+      <div class="row">
+        <button class="btn" id="rec-estimate">Estimate cost (free)</button>
+        <button class="btn" id="rec-run">▶ Analyse</button>
+        <span class="hint" id="rec-state"></span>
+      </div>
+      <div class="error" id="rec-error"></div>
+    </div>
+    <div class="card">
+      <h2>Past analyses</h2>
+      <div class="list" id="rec-runs"></div>
+    </div>
+    <div id="rec-view"></div>
   </section>
 
   <section id="runs">
@@ -479,6 +520,140 @@ $("mem-campaign").addEventListener("change", loadCampaign);
 $("mem-character").addEventListener("change", showMemory);
 document.querySelector('#tabs button[data-tab="memory"]').addEventListener("click", loadCampaign);
 
+// -- recordings tab ---------------------------------------------------------------
+const mmss = (t) => `${String(Math.floor(t / 60)).padStart(2, "0")}:${String(Math.floor(t % 60)).padStart(2, "0")}`;
+
+async function loadRecordings() {
+  const keepFile = $("rec-file").value, keepProfile = $("rec-profile").value;
+  const files = await api("/api/recordings");
+  fillSelect($("rec-file"), files.map((f) =>
+    [f.file, `${f.file} · ${f.duration_s ? mmss(f.duration_s) : "?"} · ${f.size_mb} MB${f.labels ? " · has labels" : ""}`]),
+    keepFile || undefined);
+  if (!files.length) $("rec-desc").textContent = "No recordings found in data/recordings/.";
+  if (OPTIONS) {
+    fillSelect($("rec-profile"), OPTIONS.profiles.map((p) => [p.name, p.name + (p.locked ? " 🔒" : "")]),
+      keepProfile || (OPTIONS.profiles.find((p) => p.name === "default") ? "default" : undefined));
+    onRecProfileChange();
+  }
+  const runs = (await api("/api/runs")).filter((r) => (r.scene || "").startsWith("Recording:"));
+  $("rec-runs").replaceChildren(...runs.map((r) => el("div", { class: "item", style: "cursor:pointer",
+    onclick: () => showPerception(r.run_id) },
+    el("div", { class: "meta" }, `${r.run_id} · ${r.profile} · ${usd(r.cost_usd)}`), r.scene)));
+  if (!runs.length) $("rec-runs").append(el("p", { class: "hint" }, "No analyses yet."));
+}
+function onRecProfileChange() {
+  const prof = OPTIONS.profiles.find((p) => p.name === $("rec-profile").value);
+  if (!prof) return;
+  fillSelect($("rec-character"), prof.characters.map((c) => [c, c]), $("rec-character").value || prof.characters[0]);
+  $("rec-desc").textContent = prof.description + (prof.locked ? " (locked: expensive models)" : "");
+}
+$("rec-profile").addEventListener("change", onRecProfileChange);
+
+async function startPerception(dryRun, rebuildFrom = null) {
+  $("rec-error").textContent = "";
+  ["rec-run", "rec-estimate"].forEach((id) => ($(id).disabled = true));
+  $("rec-state").textContent = "Starting…";
+  let total = 0, done = 0, cost = 0, runId = null;
+  try {
+    const { job_id } = await api("/api/perceive", { method: "POST", body: JSON.stringify({
+      recording: $("rec-file").value, profile: $("rec-profile").value, character: $("rec-character").value,
+      start: $("rec-from").value.trim() || null, end: $("rec-to").value.trim() || null,
+      dry_run: dryRun, rebuild_from: rebuildFrom,
+    }) });
+    let after = 0;
+    while (true) {
+      const job = await api(`/api/jobs/${job_id}?after=${after}`);
+      after = job.next;
+      runId = job.run_id;
+      for (const ev of job.events) {
+        const p = ev.payload;
+        if (ev.type === "perception.started") {
+          total = p.keyframes;
+          if (p.dry_run) $("rec-state").textContent =
+            `${p.keyframes} frames would be sent to the AI · estimated cost $${p.estimate_usd.toFixed(3)}`;
+        }
+        if (ev.type === "perception.observed") done += 1;
+        if (ev.type === "llm.call" && p.ok) cost += p.cost_usd || 0;
+      }
+      if (!dryRun && job.status === "running") {
+        $("rec-state").textContent = total ? `Reading frames… ${done}/${total} · ${usd(cost)}` : "Choosing frames…";
+      }
+      if (job.status !== "running") {
+        if (job.error) $("rec-error").textContent = job.error;
+        else if (!dryRun) { $("rec-state").textContent = `Done · ${usd(cost)}`; showPerception(runId); }
+        break;
+      }
+      await new Promise((r) => setTimeout(r, 700));
+    }
+  } catch (e) {
+    $("rec-error").textContent = e.message;
+    $("rec-state").textContent = "";
+  } finally {
+    ["rec-run", "rec-estimate"].forEach((id) => ($(id).disabled = false));
+    loadStatus();
+    loadRecordings();
+  }
+}
+$("rec-estimate").addEventListener("click", () => startPerception(true));
+$("rec-run").addEventListener("click", () => startPerception(false));
+
+function seenRow(runId, item, body) {
+  const img = item.frame
+    ? el("a", { href: `/api/runs/${runId}/frames/${item.frame}`, target: "_blank" },
+        el("img", { src: `/api/runs/${runId}/frames/${item.frame}`, loading: "lazy", alt: "" }))
+    : el("span");
+  return el("div", { class: "seen" }, el("div", { class: "when" }, mmss(item.t)), body, img);
+}
+async function showPerception(runId) {
+  const data = await api(`/api/runs/${encodeURIComponent(runId)}/perception`);
+  const view = $("rec-view");
+  view.replaceChildren();
+  const ev = data.evaluation;
+  if (ev) {
+    const pct = (a, b) => (b ? `${a}/${b} · ${Math.round((100 * a) / b)}%` : "—");
+    view.append(el("div", { class: "card" }, el("h2", {}, "Score against the hand-made labels"),
+      el("div", { class: "score" },
+        el("div", {}, "Choices detected", el("strong", {}, pct(ev.choices_found, ev.choices_total))),
+        el("div", {}, "Picked option", el("strong", {}, pct(ev.chosen_correct, ev.chosen_total))),
+        el("div", {}, "Subtitle lines", el("strong", {}, pct(ev.lines_found, ev.lines_total))),
+        el("div", {}, "Speakers", el("strong", {}, pct(ev.speakers_correct, ev.speakers_total))),
+        el("div", {}, "Leaks (must be 0)", el("strong", { style: `color:var(--${ev.leaks.length ? "bad" : "ok"})` }, ev.leaks.length))),
+      [...ev.missed_choices.map((m) => `Missed choice: ${m}`), ...ev.missed_lines.map((m) => `Missed line: ${m}`), ...ev.leaks.map((m) => `LEAK: ${m}`)]
+        .map((t) => el("div", { class: "hint" }, t))));
+  }
+  const head = el("div", { class: "card" }, el("h2", {}, `What the AI knows · ${runId}`),
+    el("p", { class: "hint" }, "Only this text reaches the agent: it never sees the images. Click a thumbnail to open the frame."),
+    data.has_observations ? el("button", { class: "btn", onclick: () => startPerception(false, runId) },
+      "Rebuild transcript (cheap, no frames re-read)") : null);
+  view.append(head);
+  const list = el("div", { class: "transcript" });
+  for (const item of data.transcript) {
+    let body;
+    if (item.kind === "dialogue") {
+      body = el("div", { class: "ev dialogue", title: `speaker by: ${item.speaker_basis}` },
+        el("span", { class: "speaker" }, item.speaker + ": "), `“${item.text}”`);
+    } else if (item.kind === "observation") {
+      body = el("div", { class: "ev obs" }, item.text);
+    } else if (item.kind === "hud") {
+      body = el("div", { class: "ev hud" }, item.text);
+    } else {
+      body = el("div", { class: "ev choice" },
+        el("strong", {}, item.timed ? `Timed choice · ~${Math.round(item.seconds)} s` : "Choice"),
+        el("ol", {}, item.options.map((o) => el("li", { class: o.label === item.chosen ? "chosen" : "" },
+          `${o.button} · ${o.label}${o.locked ? " (locked)" : ""}`))),
+        el("div", { class: "badges" }, item.chosen
+          ? el("span", { class: "pill " + (item.chosen_basis === "inferred" ? "warn" : "ok") },
+              item.chosen_basis === "inferred" ? "pick inferred from what followed" : "pick seen on screen")
+          : el("span", { class: "pill bad" }, "pick not seen")));
+    }
+    list.append(seenRow(runId, item, body));
+  }
+  if (!data.transcript.length) list.append(el("p", { class: "hint" }, "No transcript in this run (dry run?)."));
+  view.append(list);
+  view.scrollIntoView({ behavior: "smooth" });
+}
+document.querySelector('#tabs button[data-tab="recordings"]').addEventListener("click", loadRecordings);
+
 // -- runs tab -------------------------------------------------------------------
 async function loadRuns() {
   const rows = await api("/api/runs");
@@ -489,6 +664,11 @@ async function loadRuns() {
   if (!rows.length) $("runs-body").append(el("tr", {}, el("td", { colspan: 6, class: "hint" }, "No runs yet.")));
 }
 async function showRun(runId) {
+  const row = (await api("/api/runs")).find((r) => r.run_id === runId);
+  if (row && (row.scene || "").startsWith("Recording:")) {
+    document.querySelector('#tabs button[data-tab="recordings"]').click();
+    return showPerception(runId);
+  }
   const events = await api(`/api/runs/${encodeURIComponent(runId)}/events`);
   const render = makeRenderer($("run-view"));
   $("run-view").append(el("div", { class: "hint" }, `Run ${runId}`));

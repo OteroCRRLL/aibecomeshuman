@@ -5,6 +5,7 @@
     aibh ping -p offline -r decider         run with a single call to a role's model
     aibh play scenarios/<file>.toml         play a scenario (default run profile)
     aibh play scenarios/chains/<x>.toml -c test   play a chain, memory kept in campaigns/test
+    aibh perceive data/recordings/<x>.mkv   turn a game recording into what the agent sees
     aibh budget                             show spend against the budget caps
     aibh ui                                 open the local control panel in the browser
     aibh events runs/<folder>               print a run's event log
@@ -117,6 +118,43 @@ def cmd_play(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_perceive(args: argparse.Namespace) -> int:
+    from aibecomeshuman.perception.pipeline import finish_outputs, perceive, rebuild
+    from aibecomeshuman.perception.video import parse_time
+
+    project = _load(args)
+    video = Path(args.video)
+    start, end = parse_time(args.start) or 0.0, parse_time(args.end)
+    session = _session(project, args)
+    with session:
+        if args.rebuild:
+            result = rebuild(session, Path(args.rebuild), video, args.character)
+        else:
+            result = perceive(
+                session, video, args.character, start, end, dry_run=args.dry_run, echo=print
+            )
+        evaluation = (
+            None
+            if args.dry_run
+            else finish_outputs(session, video, result, args.character, start, end)
+        )
+    if args.dry_run:
+        print(f"Dry run: nothing was sent to the model. Keyframes in {session.dir / 'frames'}")
+        return 0
+    choices = sum(1 for i in result.items if i.kind == "choice")
+    lines = sum(1 for i in result.items if i.kind == "dialogue")
+    print(
+        f"\n{result.observed} frames observed ({result.failed} failed, "
+        f"{result.hidden_frames} hidden from the agent) -> {lines} lines, {choices} choices"
+    )
+    if evaluation is not None:
+        print("\nAgainst the labels:")
+        for row in evaluation.summary():
+            print(f"  {row}")
+    print(f"\ncost ${session.manifest.cost_usd:.4f} · transcript: {session.dir / 'transcript.md'}")
+    return 0
+
+
 def cmd_budget(args: argparse.Namespace) -> int:
     project = _load(args)
     b = project.app.budget
@@ -193,6 +231,22 @@ def build_parser() -> argparse.ArgumentParser:
         "-c", "--campaign", help="keep memory in campaigns/<name> across runs (a playthrough)"
     )
     play.set_defaults(func=cmd_play)
+
+    perceive = sub.add_parser("perceive", help="turn a game recording into what the agent sees")
+    _add_run_args(perceive)
+    perceive.add_argument("video", help="recording file (e.g. data/recordings/x.mkv)")
+    perceive.add_argument("-c", "--character", default="connor", help="protagonist")
+    perceive.add_argument("--from", dest="start", help="start time, e.g. 07:30")
+    perceive.add_argument("--to", dest="end", help="end time, e.g. 09:00")
+    perceive.add_argument(
+        "--dry-run", action="store_true", help="only pick keyframes and estimate the cost (free)"
+    )
+    perceive.add_argument(
+        "--rebuild",
+        metavar="RUN_DIR",
+        help="rebuild the transcript from that run's observations (no frames re-read; cheap)",
+    )
+    perceive.set_defaults(func=cmd_perceive)
 
     budget = sub.add_parser("budget", help="show spend against the budget caps")
     budget.add_argument("--last", type=int, default=15, help="how many paid runs to list")

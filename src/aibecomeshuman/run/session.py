@@ -10,6 +10,7 @@ model providers (with budget caps, and wrapped in recording when enabled).
 from __future__ import annotations
 
 import re
+import threading
 from collections.abc import Callable
 from pathlib import Path
 from types import TracebackType
@@ -44,6 +45,7 @@ class RunSession:
         self.events: EventLog | None = None
         self.manifest: RunManifest | None = None
         self.budget: BudgetGuard | None = None
+        self._account_lock = threading.Lock()
 
         locked = sorted(
             f"{role} -> {model.name}"
@@ -150,6 +152,11 @@ class RunSession:
     # -- internals -------------------------------------------------------------
 
     def _account_llm_call(self, event: Event) -> None:
+        # Perception calls the model from several threads at once.
+        with self._account_lock:
+            self._account(event)
+
+    def _account(self, event: Event) -> None:
         manifest, _ = self._require_started()
         assert self.budget is not None
         role = event.payload["role"]
