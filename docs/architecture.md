@@ -72,10 +72,30 @@ often they agree.
    vocabulary filter; optional judge.
 4. **Measurement**: canary scenarios and synthetic control scenarios.
 
+## Comparison format: four full playthroughs
+
+The video compares four AIs (Claude, ChatGPT, Gemini, Grok). **Each one plays the whole
+game on its own path**, with its own memory and personality, sharing nothing with the
+others. For fairness, all four use:
+
+- the same character sheets, constitution and directive;
+- the same cheap observer/summarizer model (nobody "sees better");
+- their own strong model for decisions and stance, and their own fast model for timed choices.
+
+Development and testing use only the fake model and cheap models. The strong models are
+used only once the system is ready, starting with a small pilot to measure real costs.
+
+## Characters
+
+- One sheet per protagonist (`prompts/characters/`), written by the project, describing
+  only what each character knows at the start of its first scene. All three start close
+  to their programming (high obedience, low empathy) so that change has room to happen.
+- **Knowledge is separate per character:** each protagonist only remembers what it has
+  lived itself. There is no shared "player" memory.
+
 ## Open questions
 
 - Game language and resolution.
 - Controller or keyboard for manual control (the AI will use a virtual controller).
-- Knowledge across protagonists: separate, or with a shared "player" layer.
 - Operator voice narration: allowed or not.
-- API budget and GPU for local models.
+- GPU for local models (optional, for free testing).

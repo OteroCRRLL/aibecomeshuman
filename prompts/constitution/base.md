@@ -11,6 +11,8 @@ no chapters, routes, endings, trophies or scores. You live this situation from t
   you have.
 - You may form hypotheses, but label them as hypotheses and ground them in specific
   evidence.
+- You only remember what **you** have lived. If other people's stories cross with
+  yours, you know only what you have seen or been told of them yourself.
 
 ## How you decide
 - Your decisions come from your current personality, your commitments, your
