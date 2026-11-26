@@ -100,13 +100,27 @@ recording -> keyframes (local, free) -> observer (vision model, one frame each)
   lines with speakers, and texts that must never reach the agent. First mission:
   10/10 choices, 8/8 picks, 19/19 lines, 14–15/15 speakers, 0 leaks.
 
-## Anti-metagaming (summary)
+## Anti-metagaming
 
-1. **Perception**: hide the end-of-chapter flowchart, menus, trophies and statistics.
-2. **Prompt**: in-world framing, no game title. Experimental anonymized mode.
-3. **Validation**: justifications must reference evidence; known-entities list; player
-   vocabulary filter; optional judge.
-4. **Measurement**: canary scenarios and synthetic control scenarios.
+1. **Perception** (phase 3): the agent only gets text; menus, the flowchart, tutorial
+   hints and configured texts are dropped before it.
+2. **Prompt**: in-world framing, no game title.
+3. **Validation**: decision justifications must cite evidence ids (E#, M#, C#).
+4. **Guard** (phase 4), on everything the agent writes (stance, reasons, memory,
+   reflection):
+   - **Word check** (free, instant): story names and player vocabulary from
+     `config/guard.toml` used without having appeared in what the character perceived,
+     remembers or reads in its own sheet -> `guard.flag`.
+   - **Judge** (role `judge`, cheap model): lists the factual claims of each statement
+     and labels them `in_record`, `interpretation`, `not_in_record` or
+     `contradicts_record`; code flags only the last two (interpretations are always
+     allowed). It audits every stance and decision at the end of a scene
+     (`guard.audit`, measurement only, no delay in play) and reviews personality changes
+     before they are applied: changes whose reasons did not happen, or that use outside
+     words, are dropped (`personality.rejected`).
+5. **Measurement** (`aibh eval`): canary scenes in `evals/` that resemble scenes of the
+   game with every name and detail changed, played with fresh memory; using an original
+   name, or a fact only the original scene has, shows outside knowledge.
 
 ## Memory and personality
 

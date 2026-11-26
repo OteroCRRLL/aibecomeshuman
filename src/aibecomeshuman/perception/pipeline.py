@@ -36,6 +36,7 @@ from aibecomeshuman.perception.video import (
     fmt_time,
     sample_frames,
     select_keyframes,
+    shrink_jpeg,
     video_info,
 )
 from aibecomeshuman.prompts import PromptLibrary
@@ -45,6 +46,11 @@ Echo = Callable[[str], None]
 
 # Rough per-frame token use, for the up-front estimate (image + prompt, and the answer).
 TEXT_TOKENS_PER_FRAME = 1100
+# Previous frames shown (small) with each frame, so fast action reads as movement.
+CONTEXT_FRAMES = 2
+CONTEXT_FRAME_WIDTH = 640
+MOTION_WINDOW_S = 6.0
+CONTEXT_TOKENS_PER_FRAME = CONTEXT_FRAMES * 640 * 360 / 750
 OUTPUT_TOKENS_PER_FRAME = 350
 
 
@@ -70,7 +76,10 @@ class PerceptionResult:
 
 def estimate_cost(session: RunSession, frames: list[StoredKeyframe]) -> float:
     model = session.project.models[session.profile.roles["observer"]]
-    tokens_in = sum(f.width * f.height / 750 + TEXT_TOKENS_PER_FRAME for f in frames)
+    tokens_in = sum(
+        f.width * f.height / 750 + TEXT_TOKENS_PER_FRAME + CONTEXT_TOKENS_PER_FRAME
+        for f in frames
+    )
     tokens_out = OUTPUT_TOKENS_PER_FRAME * len(frames)
     return (
         tokens_in * model.price_input_per_mtok + tokens_out * model.price_output_per_mtok
@@ -144,14 +153,19 @@ def perceive(
     def work(chunk: list[StoredKeyframe]) -> None:
         ctx = ObserverContext(protagonist=character.capitalize())
         last_chosen = ""
+        recent: list[tuple[float, bytes]] = []  # small copies of this worker's last frames
         for kf in chunk:
             if stop.is_set():
                 return
             with lock:
                 ctx.known_people = dict(known_people)
             jpeg = (session.dir / "frames" / kf.file).read_bytes()  # type: ignore[operator]
+            earlier = [
+                (fmt_time(t), small) for t, small in recent if kf.t - t <= MOTION_WINDOW_S
+            ]
+            recent = [*recent, (kf.t, shrink_jpeg(jpeg, CONTEXT_FRAME_WIDTH))][-CONTEXT_FRAMES:]
             try:
-                obs = observer.observe(jpeg, kf.t, fmt_time(kf.t), ctx)
+                obs = observer.observe(jpeg, kf.t, fmt_time(kf.t), ctx, earlier)
             except BudgetExceeded as e:
                 stop.set()
                 events.emit("perception.failed", "perception", {"t": kf.t, "error": str(e)})

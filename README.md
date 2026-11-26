@@ -16,6 +16,9 @@ Architecture and decisions: [docs/architecture.md](docs/architecture.md).
 
 ## Status
 
+**Phase 4, anti-metagaming guard.** Everything the agent writes is checked for words and
+facts it never met (a free word list plus a cheap judge model); personality changes whose
+reasons did not happen are rejected; `aibh eval` measures it on canary scenes.
 **Phase 3, perception from recordings.** The agent turns a game recording into what it
 would know (dialogue with speakers, choices and what was picked, its own display), with
 menus and spoilers filtered out, and can play the recorded scene deciding on its own.
@@ -29,7 +32,7 @@ ready.
 | 1 | Scenario simulator + decider + directives + budget | ✅ |
 | 2 | Memory and personality (campaigns, chains of scenes) | ✅ |
 | 3 | Offline perception (recordings) | ✅ |
-| 4 | Anti-metagaming guard and evaluations | |
+| 4 | Anti-metagaming guard and evaluations | ✅ |
 | 5 | Shadow-mode control (the AI suggests, you execute) | |
 | 6 | Live autonomy | |
 | 7 | Overlay and OBS | |
@@ -95,6 +98,13 @@ uv run aibh play runs/<folder>/scenario.toml                     # the AI plays 
 The run folder gets `transcript.md` (what the agent knows), the keyframes, every
 observation, a draft `scenario.toml`, and `evaluation.json` when the recording has a
 `<file>.labels.toml` with hand-made labels next to it.
+
+Anti-metagaming evaluation (canary scenes in `evals/`, ~$0.012 with Haiku):
+
+```powershell
+uv run aibh eval            # Haiku
+uv run aibh eval -p offline # free, checks the plumbing only
+```
 
 Expensive models are **locked**: a run that uses them (e.g. `-p video-claude`) needs
 `--unlock-premium`. Budget caps live in `config/default.toml` (`[budget]`).

@@ -78,6 +78,11 @@ class EventLog:
         """Subscribe to one event type (`"llm.call"`) or to all of them (`"*"`)."""
         self._subscribers[event_type].append(handler)
 
+    def unsubscribe(self, event_type: str, handler: Handler) -> None:
+        handlers = self._subscribers.get(event_type, [])
+        if handler in handlers:
+            handlers.remove(handler)
+
     def emit(self, type: str, source: str, payload: dict[str, Any] | None = None) -> Event:
         with self._lock:
             self._seq += 1

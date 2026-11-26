@@ -177,26 +177,37 @@ class ObserverContext(BaseModel):
         return "\n".join(parts)
 
 
+def _image(jpeg: bytes) -> ImagePart:
+    return ImagePart(media_type="image/jpeg", data_b64=base64.b64encode(jpeg).decode())
+
+
 class Observer:
     def __init__(self, provider: LLMProvider, system: str) -> None:
         self.provider = provider
         self.system = system
 
-    def observe(self, jpeg: bytes, t: float, time_label: str, ctx: ObserverContext) -> Observation:
+    def observe(
+        self,
+        jpeg: bytes,
+        t: float,
+        time_label: str,
+        ctx: ObserverContext,
+        earlier: list[tuple[str, bytes]] | None = None,
+    ) -> Observation:
+        """`earlier`: a few previous frames (time label, small JPEG), oldest first, so fast
+        action can be understood as movement instead of a single still."""
+        content: list[ImagePart | TextPart] = []
+        for label, image in earlier or []:
+            content += [TextPart(text=f"earlier frame ({label}), for context only:"), _image(image)]
+        content += [
+            TextPart(text=f"CURRENT frame ({time_label}): report this one."),
+            _image(jpeg),
+            TextPart(text=ctx.render(time_label)),
+        ]
         request = LLMRequest(
             purpose="observe.frame",
             system=self.system,
-            messages=[
-                Message(
-                    role="user",
-                    content=[
-                        ImagePart(
-                            media_type="image/jpeg", data_b64=base64.b64encode(jpeg).decode()
-                        ),
-                        TextPart(text=ctx.render(time_label)),
-                    ],
-                )
-            ],
+            messages=[Message(role="user", content=content)],
             json_schema=OBSERVATION_SCHEMA,
             max_tokens=1500,
         )

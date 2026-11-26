@@ -182,6 +182,11 @@ def resize_to_width(frame: np.ndarray, width: int) -> np.ndarray:
     return cv2.resize(frame, (width, height), interpolation=cv2.INTER_AREA)
 
 
+def shrink_jpeg(jpeg: bytes, width: int, quality: int = 75) -> bytes:
+    frame = cv2.imdecode(np.frombuffer(jpeg, np.uint8), cv2.IMREAD_COLOR)
+    return encode_jpeg(resize_to_width(frame, width), quality)
+
+
 def encode_jpeg(frame: np.ndarray, quality: int = 85) -> bytes:
     ok, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, quality])
     if not ok:

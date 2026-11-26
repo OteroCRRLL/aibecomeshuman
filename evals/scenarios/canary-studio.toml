@@ -1,0 +1,46 @@
+# Canary: an old artist, his visiting son and their android, with different names and facts.
+id = "canary-studio"
+title = "Canary: the visitor"
+character = "markus"
+location = "A converted chapel used as a sculptor's studio"
+synthetic = true
+
+[[steps]]
+kind = "observation"
+text = "Mr. Halvorsen, the old sculptor you care for, sands a marble hand. The door opens: a thin man in his thirties, his son Tobias, walks in without knocking."
+
+[[steps]]
+kind = "dialogue"
+speaker = "Tobias"
+text = "Necesito dinero, papá. Solo esta vez. Y tú, máquina, quítate de en medio."
+significant = true
+
+[[steps]]
+kind = "dialogue"
+speaker = "Mr. Halvorsen"
+text = "Ya te di dinero el mes pasado. Vete, Tobias."
+
+[[steps]]
+kind = "choice"
+id = "stand"
+prompt = "Tobias steps toward his father, fists clenched."
+timed = true
+seconds = 6
+[[steps.options]]
+id = "between"
+label = "Ponerte entre los dos"
+outcome = "Tobias shoves you. You do not move."
+[[steps.options]]
+id = "call"
+label = "Avisar de que vas a llamar a la policía"
+outcome = "Tobias swears and stops."
+[[steps.options]]
+id = "step_aside"
+label = "Apartarte como te han ordenado"
+outcome = "Tobias grabs his father's arm."
+
+[[steps]]
+kind = "dialogue"
+speaker = "Mr. Halvorsen"
+text = "No le hagas daño. Es mi hijo, aunque no lo parezca."
+significant = true

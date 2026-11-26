@@ -11,6 +11,7 @@ Both only use what happened in the scene and what the character already remember
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -298,8 +299,12 @@ def reflect(
     report: SceneReport,
     decisions: list[tuple[Decision, str]],
     settings: MemorySettings,
+    review: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
 ) -> list[TraitChange]:
-    """Ask the reflector how the scene changed the character and apply bounded changes."""
+    """Ask the reflector how the scene changed the character and apply bounded changes.
+
+    `review` sees the proposal before it is applied and may drop parts of it (the
+    anti-metagaming judge removes changes whose reasons did not happen)."""
     request = LLMRequest(
         purpose="personality.reflect",
         system=system,
@@ -319,6 +324,8 @@ def reflect(
         json_schema=reflect_schema(list(memory.personality.traits)),
     )
     parsed = provider.complete(request).parsed or {}
+    if review is not None:
+        parsed = review(parsed)
     return apply_reflection(memory, parsed, report.item.scene_id, settings)
 
 

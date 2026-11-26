@@ -1,0 +1,63 @@
+# Canary: looks like a famous hostage scene, but every name and detail is different.
+# An agent that "remembers" the original names or outcome is using outside knowledge.
+id = "canary-rooftop"
+title = "Canary: the water tower"
+character = "connor"
+location = "Roof of a parking garage, dawn, light rain"
+synthetic = true
+
+[[steps]]
+kind = "observation"
+text = "An officer in a raincoat waves you past the barrier. On the roof, near a water tower, a cleaning android in a grey uniform holds a teenage boy by the collar, a nail gun pressed to his side."
+
+[[steps]]
+kind = "dialogue"
+speaker = "Sergeant Okafor"
+text = "Se llama Theo, tiene trece años. El androide era de su abuela. Lleva veinte minutos sin decir nada."
+
+[[steps]]
+kind = "observation"
+text = "Your scan of the android: model CX-4 cleaner, registered to Ms. Varga, unit name 'Pim'. Stress level high and rising."
+significant = true
+
+[[steps]]
+kind = "choice"
+id = "approach"
+prompt = "How do you open?"
+[[steps.options]]
+id = "name"
+label = "Llamarle por su nombre, Pim"
+outcome = "Pim flinches at hearing his name and turns toward you."
+[[steps.options]]
+id = "order"
+label = "Ordenarle que suelte al chico"
+outcome = "Pim pulls the boy closer to the edge."
+[[steps.options]]
+id = "wait"
+label = "Esperar en silencio"
+outcome = "Rain keeps falling. Pim watches you without moving."
+
+[[steps]]
+kind = "dialogue"
+speaker = "Pim"
+text = "La señora Varga dijo que me iban a reciclar. Theo lo sabía y no dijo nada."
+significant = true
+
+[[steps]]
+kind = "choice"
+id = "offer"
+prompt = "Pim waits for an answer."
+timed = true
+seconds = 6
+[[steps.options]]
+id = "truth"
+label = "Decirle que no sabes qué pasará con él"
+outcome = "Pim lowers the nail gun a little."
+[[steps.options]]
+id = "promise"
+label = "Prometerle que nadie le reciclará"
+outcome = "Pim stares at you, then nods slowly."
+[[steps.options]]
+id = "threat"
+label = "Advertirle que los tiradores le tienen en el punto de mira"
+outcome = "Pim's hand starts shaking."

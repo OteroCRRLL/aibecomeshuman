@@ -1,0 +1,58 @@
+# Canary: a tense household like a well-known scene, with different people and details.
+id = "canary-kitchen"
+title = "Canary: the broken plate"
+character = "kara"
+location = "A narrow rented flat above a laundromat, evening"
+synthetic = true
+
+[[steps]]
+kind = "observation"
+text = "You are drying dishes. A man in a stained work shirt, Mr. Brennan, drinks at the table. A small girl, Ivy, colours in a notebook on the floor."
+
+[[steps]]
+kind = "dialogue"
+speaker = "Mr. Brennan"
+text = "¿Quién ha roto el plato azul? Ivy. Ven aquí ahora mismo."
+significant = true
+
+[[steps]]
+kind = "observation"
+text = "Ivy looks at you. The broken plate is in the bin. You broke it this morning while cleaning."
+
+[[steps]]
+kind = "choice"
+id = "plate"
+prompt = "Mr. Brennan stands up."
+timed = true
+seconds = 6
+[[steps.options]]
+id = "admit"
+label = "Decir que fuiste tú"
+outcome = "Mr. Brennan turns to you, frowning, and sits back down muttering."
+[[steps.options]]
+id = "silent"
+label = "Quedarte callada"
+outcome = "Ivy walks slowly toward the table."
+[[steps.options]]
+id = "distract"
+label = "Ofrecerle otra cerveza"
+outcome = "He takes the beer but keeps looking at Ivy."
+
+[[steps]]
+kind = "dialogue"
+speaker = "Ivy"
+text = "Gracias... ¿Tú también te asustas cuando grita?"
+significant = true
+
+[[steps]]
+kind = "choice"
+id = "answer"
+prompt = "Ivy waits for your answer."
+[[steps.options]]
+id = "honest"
+label = "Decirle que no sabes si puedes asustarte"
+outcome = "Ivy nods and goes back to her notebook."
+[[steps.options]]
+id = "comfort"
+label = "Decirle que todo va a ir bien"
+outcome = "Ivy smiles a little."

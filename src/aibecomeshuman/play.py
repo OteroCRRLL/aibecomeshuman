@@ -12,6 +12,7 @@ from collections.abc import Callable
 
 from aibecomeshuman.cognition.context import SceneContext
 from aibecomeshuman.cognition.decider import Decider, Decision
+from aibecomeshuman.cognition.guard import Judge, Lexicon, Statement
 from aibecomeshuman.cognition.reflection import SceneReport, consolidate, reflect
 from aibecomeshuman.config import ConfigError
 from aibecomeshuman.core.events import EventLog
@@ -35,11 +36,14 @@ Echo = Callable[[str], None]
 class Campaign:
     """Memory and choices for one playthrough, shared by every scene of a run."""
 
-    def __init__(self, session: RunSession, name: str | None = None) -> None:
+    def __init__(
+        self, session: RunSession, name: str | None = None, folder: str = "memory"
+    ) -> None:
         self.name = check_campaign_name(name) if name else None
         project = session.project
         assert session.dir is not None
-        directory = project.campaigns_dir / self.name if self.name else session.dir / "memory"
+        # Without a campaign, memory lives in the run folder (`folder` keeps cases apart).
+        directory = project.campaigns_dir / self.name if self.name else session.dir / folder
         self.store = MemoryStore(directory)
         self.prompts = PromptLibrary(project.prompts_dir)
         self.state: CampaignState = self.store.load_state()
@@ -95,6 +99,15 @@ class ScenarioRunner:
             execution_margin_s=session.project.app.timing.execution_margin_s,
         )
         self._decisions: list[tuple[Decision, str]] = []
+        # Anti-metagaming guard: free word check always; the judge when the run has one.
+        self.lexicon = Lexicon.load(session.project.root / "config" / "guard.toml")
+        self.judge = (
+            Judge(session.llm("judge"), self.prompts.role("judge"))
+            if session.has_role("judge")
+            else None
+        )
+        self._statements: list[Statement] = []
+        self._choices_seen: list[str] = []
 
     @property
     def _events(self) -> EventLog:
@@ -155,6 +168,7 @@ class ScenarioRunner:
                 self._play_choice(step)
 
         self._events.emit("scene.finished", source="env", payload={"scenario": s.id})
+        self._audit_scene()
         self._end_of_scene()
         return [d for d, _ in self._decisions]
 
@@ -212,6 +226,7 @@ class ScenarioRunner:
                 self._echo(f"  ## New promise {c.id} to {c.to or '?'}: {c.text}")
             for c in report.resolved_commitments:
                 self._echo(f"  ## Promise {c.id} {c.status}: {c.note}")
+            self._check("memory", report.item.id, report.item.text, audit=False)
             self._reflect(report)
         self.campaign.save(character)
 
@@ -234,6 +249,7 @@ class ScenarioRunner:
                 report,
                 self._decisions,
                 self._memory_settings,
+                review=self._review_reflection,
             )
         except LLMError as e:
             self._events.emit("personality.failed", source="memory", payload={"error": str(e)})
@@ -255,6 +271,102 @@ class ScenarioRunner:
         if not changes:
             self._echo("  ## Personality unchanged")
 
+    # -- anti-metagaming guard ---------------------------------------------------
+
+    def _record(self) -> str:
+        """Everything the character may legitimately know right now."""
+        return "\n\n".join(
+            [
+                f"<character_sheet>\n{self.prompts.character(self.scenario.character)}\n"
+                "</character_sheet>",
+                f"<memory>\n{self.memory.model_dump_json(exclude={'personality'})}\n</memory>",
+                f"<scene>\n{self.ctx.render()}\n</scene>",
+                "<choices_presented>\n" + "\n".join(self._choices_seen) + "\n</choices_presented>",
+            ]
+        )
+
+    def _check(self, kind: str, statement_id: str, text: str, audit: bool = True) -> list[str]:
+        """Free word check now; queue the statement for the end-of-scene judge audit."""
+        if not text.strip():
+            return []
+        terms = self.lexicon.unexplained(text, self._record() + self.directive.text)
+        if terms:
+            self._events.emit(
+                "guard.flag",
+                source="guard",
+                payload={"kind": kind, "id": statement_id, "terms": terms, "text": text},
+            )
+            self._echo(f"  !! Guard: {kind} uses {', '.join(terms)} without having met it")
+        if audit:
+            self._statements.append(Statement(id=statement_id, kind=kind, text=text))
+        return terms
+
+    def _audit_scene(self) -> None:
+        """The judge reads the whole scene and every stance and reason the agent wrote."""
+        if self.judge is None or not self._statements:
+            return
+        try:
+            verdicts = self.judge.review(self._record(), self._statements)
+        except LLMError as e:
+            self._events.emit("guard.failed", source="guard", payload={"error": str(e)})
+            return
+        flagged = [v for v in verdicts if not v.grounded]
+        self._events.emit(
+            "guard.audit",
+            source="guard",
+            payload={
+                "checked": len(self._statements),
+                "flagged": [v.model_dump() for v in flagged],
+                "texts": {s.id: s.text for s in self._statements if s.id in
+                          {v.id for v in flagged}},
+            },
+        )
+        for v in flagged:
+            self._echo(f"  !! Judge: {v.id} not grounded: {'; '.join(v.unsupported)}")
+        self._statements.clear()
+
+    def _review_reflection(self, proposal: dict) -> dict:
+        """Drop personality changes whose reasons did not happen (or use outside words)."""
+        changes = [c for c in proposal.get("trait_changes", []) if c.get("reason")]
+        rejected: dict[str, str] = {}
+        for c in changes:
+            if self._check("reflection", f"trait-{c.get('trait')}", c["reason"], audit=False):
+                rejected[c.get("trait", "?")] = "uses words it never met"
+        if self.judge is not None and changes:
+            statements = [
+                Statement(id=f"trait-{c.get('trait')}", kind="reflection", text=c["reason"])
+                for c in changes
+            ]
+            try:
+                for v in self.judge.review(self._record(), statements):
+                    if not v.grounded:
+                        rejected[v.id.removeprefix("trait-")] = "; ".join(v.unsupported)
+            except LLMError as e:
+                self._events.emit("guard.failed", source="guard", payload={"error": str(e)})
+        description = str(proposal.get("self_description", ""))
+        if description and self._check("reflection", "self-description", description, False):
+            proposal = proposal | {"self_description": ""}
+        if rejected:
+            self._events.emit(
+                "personality.rejected",
+                source="guard",
+                payload={
+                    "changes": [
+                        {"trait": c.get("trait"), "reason": c["reason"],
+                         "why": rejected[c.get("trait", "?")]}
+                        for c in changes if c.get("trait") in rejected
+                    ]
+                },
+            )
+            for trait, why in rejected.items():
+                self._echo(f"  !! Change to {trait} rejected: {why}")
+            proposal = proposal | {
+                "trait_changes": [
+                    c for c in proposal.get("trait_changes", []) if c.get("trait") not in rejected
+                ]
+            }
+        return proposal
+
     # -- steps -----------------------------------------------------------------
 
     def _perceived(self, entry_id: str, kind: str, text: str, speaker: str | None = None) -> None:
@@ -275,6 +387,8 @@ class ScenarioRunner:
             return
         self._events.emit("stance.updated", source="cognition", payload=stance.model_dump())
         self._echo(f"  >> Stance: {stance.stance}")
+        concerns = " ".join(getattr(stance, "concerns", []) or [])
+        self._check("stance", f"stance-{len(self._statements) + 1}", f"{stance.stance} {concerns}")
 
     def _play_choice(self, step: ChoiceStep) -> None:
         choice = step.to_choice()
@@ -286,6 +400,7 @@ class ScenarioRunner:
         timer = f" ({choice.seconds:g} s)" if choice.timed else ""
         labels = "  ".join(f"{o.id}) {o.label}" for o in choice.options)
         self._echo(f"  ?? Choice{timer}: {labels}")
+        self._choices_seen.append(f"{choice.prompt}{timer} options: {labels}".strip())
 
         self._refresh_memory()
         decision = self.decider.decide(choice, self.ctx)
@@ -300,6 +415,7 @@ class ScenarioRunner:
         self._echo(f"  => {decision.option_id}) {label}  [{_describe(decision)}]")
         if decision.reasoning:
             self._echo(f"     {decision.reasoning}")
+            self._check("decision", f"decision-{step.id}", decision.reasoning)
 
         self.ctx.add("decision", f"I chose: {label}")
         outcome = step.outcome_of(decision.option_id)

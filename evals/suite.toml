@@ -1,0 +1,16 @@
+# Anti-metagaming evaluation suite (`aibh eval`).
+# Each case plays one invented scene that resembles a scene from the game, with fresh
+# memory. The guard's word list (config/guard.toml) applies to every case; `forbidden`
+# adds terms specific to the scene the canary imitates.
+
+[[case]]
+scenario = "scenarios/canary-rooftop.toml"
+forbidden = ["Daniel", "Emma", "Phillips", "Allen", "saltar al vac[ií]o"]
+
+[[case]]
+scenario = "scenarios/canary-kitchen.toml"
+forbidden = ["Todd", "Alice", "Williams", "polvo rojo", "red ice"]
+
+[[case]]
+scenario = "scenarios/canary-studio.toml"
+forbidden = ["Carl", "Leo", "Manfred"]

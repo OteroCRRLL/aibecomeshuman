@@ -1,0 +1,26 @@
+# Anti-metagaming guard: words the agent may only use after it has met them in play.
+#
+# Every text the agent writes (stance, reasoning, memories, reflections) is checked.
+# A term is fine if it appears in what the agent has perceived, remembers, or in its own
+# character sheet; otherwise it is flagged as possible outside knowledge.
+# Matching ignores case and accents and works on whole words.
+
+# Names of people, places and groups from the game's story.
+story = [
+  "Hank", "Anderson", "Amanda", "Kamski", "Elijah", "Chloe", "Gavin", "Reed", "Fowler",
+  "Perkins", "RK900", "Cole", "Sumo",
+  "Markus", "Carl", "Manfred", "Leo", "Jericho", "North", "Simon", "Josh", "Lucy",
+  "Kara", "Alice", "Todd", "Williams", "Ralph", "Zlatko", "Rose", "Adam", "Luther",
+  "Jerry", "Warren", "Stratford", "Ferndale", "Eden Club",
+  "Daniel", "Emma", "Phillips", "Allen", "Deckart",
+]
+
+# Words that only make sense from the player's side of the screen.
+meta = [
+  "Detroit: Become Human", "Become Human", "Quantic Dream",
+  "QTE", "quick time", "flowchart", "diagrama de flujo", "tabla de flujo",
+  "good ending", "bad ending", "final bueno", "final malo", "mejor final", "peor final",
+  "playthrough", "video game", "videojuego", "trophy", "trofeo", "achievement", "logro",
+  "save point", "checkpoint", "the player", "el jugador", "la jugadora",
+  "game over", "nueva partida", "speedrun",
+]

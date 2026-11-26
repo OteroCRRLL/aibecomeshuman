@@ -6,6 +6,7 @@
     aibh play scenarios/<file>.toml         play a scenario (default run profile)
     aibh play scenarios/chains/<x>.toml -c test   play a chain, memory kept in campaigns/test
     aibh perceive data/recordings/<x>.mkv   turn a game recording into what the agent sees
+    aibh eval                               anti-metagaming evaluation (canary scenes)
     aibh budget                             show spend against the budget caps
     aibh ui                                 open the local control panel in the browser
     aibh events runs/<folder>               print a run's event log
@@ -155,6 +156,23 @@ def cmd_perceive(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_eval(args: argparse.Namespace) -> int:
+    from aibecomeshuman.evals import run_suite, summary_rows
+
+    project = _load(args)
+    suite = Path(args.suite) if args.suite else project.root / "evals" / "suite.toml"
+    session = _session(project, args)
+    with session:
+        results = run_suite(session, suite, echo=print if args.verbose else None)
+    print("\nAnti-metagaming evaluation:")
+    for row in summary_rows(results):
+        print(f"  {row}")
+    clean = sum(r.clean for r in results)
+    print(f"\n{clean}/{len(results)} cases clean · cost ${session.manifest.cost_usd:.4f} · "
+          f"run: {session.dir}")
+    return 0
+
+
 def cmd_budget(args: argparse.Namespace) -> int:
     project = _load(args)
     b = project.app.budget
@@ -247,6 +265,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="rebuild the transcript from that run's observations (no frames re-read; cheap)",
     )
     perceive.set_defaults(func=cmd_perceive)
+
+    evaluate = sub.add_parser("eval", help="anti-metagaming evaluation with canary scenes")
+    _add_run_args(evaluate)
+    evaluate.add_argument("--suite", help="suite file (default: evals/suite.toml)")
+    evaluate.add_argument("-v", "--verbose", action="store_true", help="print every step")
+    evaluate.set_defaults(func=cmd_eval)
 
     budget = sub.add_parser("budget", help="show spend against the budget caps")
     budget.add_argument("--last", type=int, default=15, help="how many paid runs to list")

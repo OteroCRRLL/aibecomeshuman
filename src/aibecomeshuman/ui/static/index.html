@@ -379,6 +379,29 @@ function makeRenderer(container) {
       case "personality.failed":
         container.append(el("div", { class: "ev fail" }, `${ev.type}: ${p.error}`));
         break;
+      case "guard.flag":
+        container.append(el("div", { class: "ev banner" },
+          `Guard: the ${p.kind} uses ${p.terms.join(", ")} without having met it`,
+          el("div", { class: "hint" }, p.text)));
+        break;
+      case "guard.audit":
+        container.append(el("div", { class: "ev " + (p.flagged.length ? "banner" : "memory") },
+          el("div", { class: "tag" }, `Judge · ${p.checked - p.flagged.length}/${p.checked} statements grounded`),
+          p.flagged.map((v) => el("div", {}, `${v.id}: ${v.unsupported.join("; ")}`,
+            p.texts && p.texts[v.id] ? el("div", { class: "hint" }, `“${p.texts[v.id]}”`) : null))));
+        break;
+      case "personality.rejected":
+        container.append(el("div", { class: "ev banner" }, el("div", { class: "tag" }, "Personality changes rejected by the judge"),
+          p.changes.map((c) => el("div", {}, `${c.trait}: ${c.reason}`, el("div", { class: "hint" }, c.why)))));
+        break;
+      case "guard.failed":
+        container.append(el("div", { class: "ev fail" }, `Judge failed: ${p.error}`));
+        break;
+      case "eval.case":
+        container.append(el("div", { class: "ev " + (p.guard_terms.length || p.forbidden_hits.length || p.judge_flagged.length ? "banner" : "memory") },
+          el("div", { class: "tag" }, `Canary ${p.scenario}`),
+          `outside words: ${[...p.guard_terms, ...p.forbidden_hits].join(", ") || "none"} · judge flags: ${p.judge_flagged.length}/${p.judge_checked} · rejected changes: ${p.rejected_changes}`));
+        break;
       case "directive.changed":
         container.append(el("div", { class: "ev banner" }, `Directive changed: ${p.from} → ${p.to}`));
         break;
