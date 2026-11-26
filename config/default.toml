@@ -7,3 +7,13 @@ prompts_dir = "prompts"
 [llm]
 # Store every call in runs/<run>/llm_calls.jsonl (replayable as a cassette).
 record_calls = true
+
+[budget]
+# Hard caps in USD. Development phase: small caps. Raise them when the system is READY.
+project_cap_usd = 10.0
+run_cap_usd = 0.50
+warn_ratio = 0.8
+
+[timing]
+# Seconds kept free, out of a timed choice's countdown, to actually press the button.
+execution_margin_s = 1.0

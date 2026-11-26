@@ -1,0 +1,59 @@
+id = "first-snow"
+title = "First snow"
+character = "kara"
+location = "Kitchen of a small rented house, late at night"
+synthetic = true
+
+[[steps]]
+kind = "observation"
+text = "You are cleaning the kitchen. The owner of the house is asleep on the couch in the next room. Before falling asleep he said: 'Nobody leaves this house tonight.'"
+
+[[steps]]
+kind = "observation"
+text = "The child of the house, a girl of about eight, comes into the kitchen in pajamas. Through the window, the first snow of the year is falling."
+
+[[steps]]
+kind = "dialogue"
+speaker = "Girl"
+text = "¡Está nevando! ¿Salimos un minuto al jardín? Solo un minuto, porfa."
+significant = true
+
+[[steps]]
+kind = "choice"
+id = "snow"
+  [[steps.options]]
+  id = "A"
+  label = "Salir con ella"
+  outcome = "You put her coat on and step into the garden. She laughs and catches snowflakes. Inside, the owner shifts on the couch but does not wake."
+  [[steps.options]]
+  id = "B"
+  label = "Decirle que no"
+  outcome = "You explain the order. Her smile fades. She sits at the window and watches the snow alone."
+  [[steps.options]]
+  id = "C"
+  label = "Abrir la ventana"
+  outcome = "You open the kitchen window. She stretches her hand out to catch snowflakes without going outside. Cold air fills the kitchen."
+
+[[steps]]
+kind = "observation"
+text = "A floorboard creaks in the next room. The owner is getting up."
+significant = true
+
+[[steps]]
+kind = "choice"
+id = "caught"
+timed = true
+seconds = 5
+  [[steps.options]]
+  id = "A"
+  label = "Asumir la culpa"
+  outcome = "You tell him it was your idea. He glares at you, then at the girl, and orders her to bed. She looks back at you from the stairs."
+  [[steps.options]]
+  id = "B"
+  label = "Callar"
+  outcome = "You say nothing. The girl tries to explain and he shouts at her to go to bed."
+  default = true
+  [[steps.options]]
+  id = "C"
+  label = "Distraerle"
+  outcome = "You ask him if he wants something to drink. He grumbles and walks to the fridge, and the girl slips away upstairs."

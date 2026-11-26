@@ -51,9 +51,24 @@ class LLMSettings(_Strict):
     record_calls: bool = True
 
 
+class BudgetSettings(_Strict):
+    # Hard caps in USD. Paid calls are refused once a cap is reached.
+    project_cap_usd: float = Field(default=10.0, ge=0)
+    run_cap_usd: float = Field(default=0.5, ge=0)
+    # Emit a `budget.warning` event when this fraction of a cap is spent.
+    warn_ratio: float = Field(default=0.8, gt=0, le=1)
+
+
+class TimingSettings(_Strict):
+    # Seconds reserved, out of a timed choice's countdown, to actually press the button.
+    execution_margin_s: float = Field(default=1.0, ge=0)
+
+
 class AppConfig(_Strict):
     paths: PathsConfig = Field(default_factory=PathsConfig)
     llm: LLMSettings = Field(default_factory=LLMSettings)
+    budget: BudgetSettings = Field(default_factory=BudgetSettings)
+    timing: TimingSettings = Field(default_factory=TimingSettings)
 
 
 class ModelProfile(_Strict):
@@ -67,15 +82,29 @@ class ModelProfile(_Strict):
     # Automatic retry on another model if the primary one refuses the request
     # (only providers/models that support it; see docs/architecture.md).
     refusal_fallback: bool = False
+    # USD per million tokens, used for cost tracking and budget caps.
+    price_input_per_mtok: float = Field(default=0.0, ge=0)
+    price_output_per_mtok: float = Field(default=0.0, ge=0)
+    price_cache_read_per_mtok: float = Field(default=0.0, ge=0)
+    # Locked models (the expensive ones) can only be used with an explicit unlock.
+    locked: bool = False
     # Provider-specific options (e.g. scripted responses for the fake provider).
     options: dict[str, Any] = Field(default_factory=dict)
+
+    @property
+    def is_paid(self) -> bool:
+        return any(
+            (self.price_input_per_mtok, self.price_output_per_mtok, self.price_cache_read_per_mtok)
+        )
 
 
 class RunProfile(_Strict):
     name: str
     description: str = ""
-    character: str
+    characters: list[str] = Field(min_length=1)
     directive: str = "default"
+    # Language for every free-text field the agent writes (reasoning, stance...).
+    output_language: str = "Spanish"
     roles: dict[str, str]
 
     @field_validator("roles")
@@ -180,8 +209,9 @@ def _check_references(project: ProjectConfig) -> None:
                     f"run '{run.name}': role '{role}' points to model '{model_name}', "
                     f"which does not exist in config/models/"
                 )
-        if not (prompts / "characters" / f"{run.character}.md").is_file():
-            problems.append(f"run '{run.name}': missing prompts/characters/{run.character}.md")
+        for character in run.characters:
+            if not (prompts / "characters" / f"{character}.md").is_file():
+                problems.append(f"run '{run.name}': missing prompts/characters/{character}.md")
         if not (prompts / "directives" / f"{run.directive}.md").is_file():
             problems.append(f"run '{run.name}': missing prompts/directives/{run.directive}.md")
     if problems:

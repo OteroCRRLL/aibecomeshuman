@@ -22,6 +22,7 @@ class RoleUsage(BaseModel):
     calls: int = 0
     errors: int = 0
     total_latency_ms: float = 0.0
+    cost_usd: float = 0.0
     usage: Usage = Field(default_factory=Usage)
 
 
@@ -37,6 +38,7 @@ class RunManifest(BaseModel):
     python_version: str = Field(default_factory=lambda: sys.version.split()[0])
     platform: str = Field(default_factory=platform.platform)
     usage_by_role: dict[str, RoleUsage] = Field(default_factory=dict)
+    cost_usd: float = 0.0
     error: str | None = None
 
     def write(self, path: Path) -> None:

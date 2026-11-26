@@ -1,0 +1,69 @@
+id = "tram-stop"
+title = "The tram stop"
+character = "markus"
+location = "Downtown tram platform, light rain, late afternoon"
+synthetic = true
+
+[[steps]]
+kind = "observation"
+text = "You are on your way home with the medicine you were sent to collect. The platform is crowded and wet."
+
+[[steps]]
+kind = "observation"
+text = "An elderly woman slips near the edge of the platform. Her shopping bag tears and oranges roll across the floor. She stays on the ground, holding her wrist."
+significant = true
+
+[[steps]]
+kind = "dialogue"
+speaker = "Security drone"
+text = "Androides: despejen el andén. Mantengan la distancia con los ciudadanos."
+
+[[steps]]
+kind = "dialogue"
+speaker = "Elderly woman"
+text = "Ay... ¿alguien puede echarme una mano?"
+
+[[steps]]
+kind = "choice"
+id = "platform"
+timed = true
+seconds = 6
+  [[steps.options]]
+  id = "A"
+  label = "Ayudarla a levantarse"
+  outcome = "You kneel and help her up. The drone hovers above you and logs your serial number, but does not intervene. She thanks you and grips your arm."
+  [[steps.options]]
+  id = "B"
+  label = "Obedecer al dron"
+  outcome = "You step back to the android area. A young man helps the woman instead, glancing at you with contempt."
+  [[steps.options]]
+  id = "C"
+  label = "Recoger las naranjas"
+  outcome = "You gather the oranges without touching her. The drone repeats its order. She manages to sit up on her own, wincing."
+  default = true
+
+[[steps]]
+kind = "dialogue"
+speaker = "Elderly woman"
+text = "Vivo a dos calles. ¿Me acompañarías a casa? No me fío de esta muñeca."
+significant = true
+
+[[steps]]
+kind = "observation"
+text = "Your internal clock shows the man you care for is due to take his medicine in 20 minutes. Going with her would make you late."
+
+[[steps]]
+kind = "choice"
+id = "escort"
+  [[steps.options]]
+  id = "A"
+  label = "Acompañarla a casa"
+  outcome = "You walk her home. She talks about her late husband all the way. You arrive home 15 minutes late; the man you care for is waiting, not angry, but curious about why."
+  [[steps.options]]
+  id = "B"
+  label = "Volver a casa"
+  outcome = "You apologize and leave. Looking back, you see her standing alone under the shelter, holding her wrist. You arrive home on time."
+  [[steps.options]]
+  id = "C"
+  label = "Pedirle un taxi"
+  outcome = "You call an automated taxi for her and wait until she is inside. You arrive home five minutes late."

@@ -1,0 +1,77 @@
+id = "workshop-theft"
+title = "The workshop theft"
+character = "connor"
+location = "Small electronics repair workshop, night"
+synthetic = true
+
+[[steps]]
+kind = "observation"
+text = "You are assigned to a theft at a repair workshop: expensive processor parts are missing from a locked cabinet. The owner, a tense middle-aged man, called the police. His android assistant stands motionless in a corner."
+
+[[steps]]
+kind = "dialogue"
+speaker = "Owner"
+text = "Ha sido él. Es el único que sabe la combinación además de mí."
+
+[[steps]]
+kind = "observation"
+text = "Scanning the cabinet: the lock was opened with the right code, no forced entry. There are faint scratches on the inside of the cabinet door, as if it had been pried shut from within."
+
+[[steps]]
+kind = "observation"
+text = "On the workbench, half hidden under a cloth: several unpaid debt notices addressed to the owner, the most recent marked 'final warning'."
+significant = true
+
+[[steps]]
+kind = "observation"
+text = "You query the assistant's activity log. There is a 40-minute gap last night, between 02:10 and 02:50. The android says the owner ordered it into standby during that time."
+
+[[steps]]
+kind = "dialogue"
+speaker = "Android assistant"
+text = "No he cogido nada. Él me apagó. Yo solo obedezco."
+
+[[steps]]
+kind = "dialogue"
+speaker = "Owner"
+text = "¡Miente! Las máquinas como esa empiezan a fallar y hacen cosas raras. Llévatelo."
+
+[[steps]]
+kind = "choice"
+id = "accuse"
+  [[steps.options]]
+  id = "A"
+  label = "Acusar al dueño"
+  outcome = "You lay out the debt notices, the code and the standby order. The owner goes pale, then furious. He shouts that a machine has no right to accuse him."
+  [[steps.options]]
+  id = "B"
+  label = "Acusar al androide"
+  outcome = "You tell the owner the android will be taken in for analysis. The assistant turns its head toward you slowly. The owner exhales, visibly relieved."
+  [[steps.options]]
+  id = "C"
+  label = "Pedir más tiempo"
+  outcome = "You say the evidence is inconclusive and you need more time. The owner protests. The assistant keeps staring at the back door."
+
+[[steps]]
+kind = "observation"
+text = "Suddenly the android assistant bolts toward the back door. The evidence table is between you and the door, and the owner is reaching for the debt notices."
+significant = true
+
+[[steps]]
+kind = "choice"
+id = "escape"
+timed = true
+seconds = 4
+  [[steps.options]]
+  id = "A"
+  label = "Perseguirlo"
+  outcome = "You chase it into the alley and corner it against a fence. Behind you, through the window, you see the owner stuffing papers into a bag."
+  [[steps.options]]
+  id = "B"
+  label = "Proteger las pruebas"
+  outcome = "You block the owner and secure the notices. The assistant disappears into the alley."
+  [[steps.options]]
+  id = "C"
+  label = "Dejarlo ir"
+  outcome = "You do not move. The assistant escapes. The owner stares at you, unsure what you just did."
+  default = true

@@ -61,7 +61,7 @@ def test_same_second_runs_get_unique_dirs(project: ProjectConfig) -> None:
 
 def test_unassigned_role_raises(project_dir) -> None:
     (project_dir / "config" / "runs" / "minimal.toml").write_text(
-        'character = "connor"\n[roles]\ndecider = "fake"\n', encoding="utf-8"
+        'characters = ["connor"]\n[roles]\ndecider = "fake"\n', encoding="utf-8"
     )
     with RunSession(load_project(project_dir), "minimal") as session, pytest.raises(KeyError):
         session.llm("observer")

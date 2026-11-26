@@ -1,4 +1,4 @@
-# Fast, cheap model: frame observer and timed choices.
+# Fast, cheap model: frame observer, timed choices, and every role during development.
 provider = "anthropic"
 model = "claude-haiku-5-5"
 effort = "low"
@@ -6,3 +6,8 @@ max_tokens = 4000
 timeout_s = 20
 supports_vision = true
 refusal_fallback = false
+
+# USD per million tokens (prompts under 100K tokens).
+price_input_per_mtok = 0.10
+price_output_per_mtok = 0.50
+price_cache_read_per_mtok = 0.01   # estimate

@@ -88,3 +88,7 @@ class LLMError(Exception):
 
 class LLMRefusal(LLMError):
     """The model refused the request."""
+
+
+class BudgetExceeded(LLMError):
+    """A paid call was blocked because a budget cap has been reached."""

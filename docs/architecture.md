@@ -72,6 +72,24 @@ often they agree.
    vocabulary filter; optional judge.
 4. **Measurement**: canary scenarios and synthetic control scenarios.
 
+## Budget
+
+- Every model profile carries its prices; each call's cost is logged in `llm.call` and
+  summed into the run manifest (`cost_usd`) as it happens.
+- `BudgetGuard` refuses paid calls once the per-run cap or the project-wide cap
+  (the sum of every run's manifest) is reached, and warns at 80%. Free models are never
+  blocked. A blocked call behaves like any model failure: the decider falls back.
+- Expensive models are `locked = true` and need `--unlock-premium`. Development runs
+  use Claude Haiku in every role; `video-claude` is the locked profile for the video.
+
+## Game language
+
+The game will run with **English voices and Spanish text**. The agent does not hear
+audio: it reads the **Spanish subtitles** (subtitles must be enabled in the game).
+Observations written by the observer are in English; dialogue and option labels stay
+in Spanish, exactly as on screen. The agent writes its reasoning in the run's
+`output_language` (Spanish by default), which is what the overlay will show.
+
 ## Comparison format: four full playthroughs
 
 The video compares four AIs (Claude, ChatGPT, Gemini, Grok). **Each one plays the whole
@@ -95,7 +113,7 @@ used only once the system is ready, starting with a small pilot to measure real 
 
 ## Open questions
 
-- Game language and resolution.
+- Game resolution.
 - Controller or keyboard for manual control (the AI will use a virtual controller).
 - Operator voice narration: allowed or not.
 - GPU for local models (optional, for free testing).

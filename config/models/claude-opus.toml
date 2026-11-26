@@ -1,4 +1,5 @@
 # Strong model: critical decisions, scene stance, personality reflection.
+# LOCKED: only usable with --unlock-premium, once the system is READY.
 provider = "anthropic"
 model = "claude-opus-5-5"
 effort = "high"
@@ -7,3 +8,9 @@ timeout_s = 120
 supports_vision = true
 # If the model refuses a request, the API retries it on a fallback model.
 refusal_fallback = true
+locked = true
+
+# USD per million tokens.
+price_input_per_mtok = 4.0
+price_output_per_mtok = 20.0
+price_cache_read_per_mtok = 0.20

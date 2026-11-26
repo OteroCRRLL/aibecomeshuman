@@ -80,11 +80,14 @@ class RecordingProvider:
             "fingerprint": fingerprint,
         }
         if response is not None:
+            from aibecomeshuman.budget import call_cost
+
             payload |= {
                 "ok": True,
                 "model": response.model,
                 "latency_ms": round(response.latency_ms, 1),
                 "usage": response.usage.model_dump(),
+                "cost_usd": round(call_cost(self.profile, response.usage), 8),
             }
         else:
             payload |= {"ok": False, "error": error}

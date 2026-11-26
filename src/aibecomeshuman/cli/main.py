@@ -1,21 +1,29 @@
 """`aibh` command line.
 
-    aibh check                          validate the configuration and list models and runs
-    aibh run -p offline                 empty run: creates the manifest and the event log
-    aibh ping -p offline -r decider     run with a single call to a role's model
-    aibh events runs/<folder>           print a run's event log
+    aibh check                              validate the configuration and list models and runs
+    aibh run -p offline                     empty run: creates the manifest and the event log
+    aibh ping -p offline -r decider         run with a single call to a role's model
+    aibh play scenarios/<file>.toml         play a scenario (default run profile)
+    aibh budget                             show spend against the budget caps
+    aibh events runs/<folder>               print a run's event log
+
+Runs that use locked (expensive) models need --unlock-premium.
 """
 
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from collections.abc import Sequence
 from pathlib import Path
 
+from aibecomeshuman.budget import project_spent
 from aibecomeshuman.config import ConfigError, ProjectConfig, load_project
 from aibecomeshuman.core.events import read_events
+from aibecomeshuman.env.scenario import load_scenario
 from aibecomeshuman.llm.types import LLMError, LLMRequest, Message
+from aibecomeshuman.play import ScenarioRunner
 from aibecomeshuman.run.session import RunSession
 
 PING_SYSTEM = "Answer in one short sentence."
@@ -26,24 +34,36 @@ def _load(args: argparse.Namespace) -> ProjectConfig:
     return load_project(Path(args.root) if args.root else None)
 
 
+def _session(project: ProjectConfig, args: argparse.Namespace) -> RunSession:
+    return RunSession(project, args.profile, unlock_premium=args.unlock_premium)
+
+
 def cmd_check(args: argparse.Namespace) -> int:
     project = _load(args)
     print(f"Project: {project.root}")
     print("\nModels:")
     for name, m in sorted(project.models.items()):
-        print(f"  {name:<16} {m.provider:<10} {m.model}  (effort={m.effort or '-'})")
+        price = (
+            f"${m.price_input_per_mtok:g}/${m.price_output_per_mtok:g} per MTok"
+            if m.is_paid
+            else "free"
+        )
+        lock = "  LOCKED" if m.locked else ""
+        print(f"  {name:<16} {m.provider:<10} {m.model:<18} {price}{lock}")
     print("\nRuns:")
     for name, r in sorted(project.runs.items()):
-        print(f"  {name:<16} character={r.character} directive={r.directive}")
+        print(f"  {name:<16} characters={','.join(r.characters)} directive={r.directive}")
         for role, model in r.roles.items():
             print(f"      {role:<13} -> {model}")
+    b = project.app.budget
+    print(f"\nBudget caps: project ${b.project_cap_usd:.2f}, per run ${b.run_cap_usd:.2f}")
     print("\nConfiguration is valid.")
     return 0
 
 
 def cmd_run(args: argparse.Namespace) -> int:
     project = _load(args)
-    with RunSession(project, args.profile) as session:
+    with _session(project, args) as session:
         pass
     print(f"Run created: {session.dir}")
     return 0
@@ -51,7 +71,7 @@ def cmd_run(args: argparse.Namespace) -> int:
 
 def cmd_ping(args: argparse.Namespace) -> int:
     project = _load(args)
-    session = RunSession(project, args.profile)
+    session = _session(project, args)
     with session:
         provider = session.llm(args.role)
         request = LLMRequest(
@@ -68,9 +88,43 @@ def cmd_ping(args: argparse.Namespace) -> int:
     print(f"[{response.provider}/{response.model}] {response.text}")
     print(
         f"latency={response.latency_ms:.0f} ms  "
-        f"tokens in/out={response.usage.input_tokens}/{response.usage.output_tokens}"
+        f"tokens in/out={response.usage.input_tokens}/{response.usage.output_tokens}  "
+        f"cost=${session.manifest.cost_usd:.6f}"
     )
     print(f"Run: {session.dir}")
+    return 0
+
+
+def cmd_play(args: argparse.Namespace) -> int:
+    project = _load(args)
+    scenario = load_scenario(Path(args.scenario))
+    session = _session(project, args)
+    with session:
+        runner = ScenarioRunner(session, scenario, directive=args.directive, echo=print)
+        decisions = runner.run()
+    fallbacks = sum(d.source == "fallback" for d in decisions)
+    print(
+        f"\n{len(decisions)} decisions ({fallbacks} by fallback) · "
+        f"cost ${session.manifest.cost_usd:.6f} · run: {session.dir}"
+    )
+    return 0
+
+
+def cmd_budget(args: argparse.Namespace) -> int:
+    project = _load(args)
+    b = project.app.budget
+    spent = project_spent(project.runs_dir)
+    print(f"Project spend: ${spent:.4f} of ${b.project_cap_usd:.2f}")
+    print(f"Per-run cap:   ${b.run_cap_usd:.2f}\n")
+    rows = []
+    for manifest in sorted(project.runs_dir.glob("*/manifest.json")):
+        data = json.loads(manifest.read_text(encoding="utf-8"))
+        if data.get("cost_usd"):
+            rows.append((manifest.parent.name, data["cost_usd"]))
+    for name, cost in rows[-args.last :]:
+        print(f"  {name:<40} ${cost:.6f}")
+    if not rows:
+        print("  (no paid runs yet)")
     return 0
 
 
@@ -89,6 +143,15 @@ def cmd_events(args: argparse.Namespace) -> int:
     return 0
 
 
+def _add_run_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("-p", "--profile", default="default")
+    parser.add_argument(
+        "--unlock-premium",
+        action="store_true",
+        help="allow locked (expensive) models in this run",
+    )
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="aibh", description="aibecomeshuman")
     parser.add_argument("--root", help="project root (searched upwards from here by default)")
@@ -97,14 +160,24 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("check", help="validate the configuration").set_defaults(func=cmd_check)
 
     run = sub.add_parser("run", help="create an empty run")
-    run.add_argument("-p", "--profile", default="default")
+    _add_run_args(run)
     run.set_defaults(func=cmd_run)
 
     ping = sub.add_parser("ping", help="one test call to a role's model")
-    ping.add_argument("-p", "--profile", default="default")
+    _add_run_args(ping)
     ping.add_argument("-r", "--role", default="decider")
     ping.add_argument("text", nargs="?", help="text to send (optional)")
     ping.set_defaults(func=cmd_ping)
+
+    play = sub.add_parser("play", help="play a scenario without the game")
+    _add_run_args(play)
+    play.add_argument("scenario", help="path to a scenario .toml file")
+    play.add_argument("-d", "--directive", help="override the run's directive")
+    play.set_defaults(func=cmd_play)
+
+    budget = sub.add_parser("budget", help="show spend against the budget caps")
+    budget.add_argument("--last", type=int, default=15, help="how many paid runs to list")
+    budget.set_defaults(func=cmd_budget)
 
     events = sub.add_parser("events", help="print a run's event log")
     events.add_argument("run_dir")

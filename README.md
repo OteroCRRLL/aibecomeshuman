@@ -16,13 +16,15 @@ Architecture and decisions: [docs/architecture.md](docs/architecture.md).
 
 ## Status
 
-**Phase 0, foundations.** Configuration, event log, model layer (fake + Anthropic),
-call recording and replay, run manifest, CLI, tests and CI.
+**Phase 1, decisions without the game.** The agent plays scripted scenes through its
+character sheet, a scene stance and the run directive, with cost tracking and budget caps.
+Development uses one AI (Claude Haiku) plus a free fake model; the strong models stay
+locked until the system is ready.
 
 | Phase | Scope | Status |
 |---|---|---|
 | 0 | Foundations | ✅ (real-model ping pending) |
-| 1 | Scenario simulator + decider + directives | ⏳ next |
+| 1 | Scenario simulator + decider + directives + budget | ✅ (Haiku test run pending) |
 | 2 | Memory and personality | |
 | 3 | Offline perception (recordings) | |
 | 4 | Anti-metagaming guard and evaluations | |
@@ -51,6 +53,18 @@ uv run aibh ping -p default -r decider_fast   # Haiku
 uv run pytest -m live                         # contract tests against the API
 ```
 
+Play a scripted scene (see [scenarios/README.md](scenarios/README.md)):
+
+```powershell
+uv run aibh play scenarios/tram-stop.toml -p offline   # fake model, free
+uv run aibh play scenarios/tram-stop.toml              # Claude Haiku, a fraction of a cent
+uv run aibh play scenarios/tram-stop.toml -d bad_ideas # with another directive
+uv run aibh budget                                     # spend so far vs. the caps
+```
+
+Expensive models are **locked**: a run that uses them (e.g. `-p video-claude`) needs
+`--unlock-premium`. Budget caps live in `config/default.toml` (`[budget]`).
+
 Each run creates a folder in `runs/` with `manifest.json` (models, prompts, cost),
 `events.jsonl` (everything that happened) and `llm_calls.jsonl` (every call, replayable).
 
@@ -63,11 +77,17 @@ uv run aibh events runs/<folder> -t llm.call
 
 ```
 config/            settings, model profiles and run profiles (TOML)
-prompts/           constitution, characters, directives (Markdown)
+prompts/           constitution, roles, characters, directives (Markdown)
+scenarios/         invented test scenes (TOML)
 src/aibecomeshuman/
   core/            event log and clock
   llm/             model port, adapters, recording/cassettes
+  cognition/       scene context and decider (stance, decisions, fallback)
+  env/             environments (today: scripted scenarios)
   run/             run session and manifest
+  budget.py        cost tracking and budget caps
+  prompts.py       layered system prompt
+  play.py          scenario runner
   cli/             the aibh command
 tests/             unit/ · integration/ · contract/ (live)
 docs/              architecture and dev log
