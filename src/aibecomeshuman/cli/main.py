@@ -1,9 +1,9 @@
-"""Línea de comandos `aibh`.
+"""`aibh` command line.
 
-    aibh check                          valida la configuración y lista modelos y runs
-    aibh run -p offline                 run vacía: crea manifiesto y registro de eventos
-    aibh ping -p offline -r decider     run con una sola llamada al modelo de un rol
-    aibh events runs/<carpeta>          muestra el registro de eventos de una run
+    aibh check                          validate the configuration and list models and runs
+    aibh run -p offline                 empty run: creates the manifest and the event log
+    aibh ping -p offline -r decider     run with a single call to a role's model
+    aibh events runs/<folder>           print a run's event log
 """
 
 from __future__ import annotations
@@ -18,8 +18,8 @@ from aibecomeshuman.core.events import read_events
 from aibecomeshuman.llm.types import LLMError, LLMRequest, Message
 from aibecomeshuman.run.session import RunSession
 
-PING_SYSTEM = "Responde en una sola frase corta, en español."
-PING_TEXT = "Prueba de conexión. Di qué modelo eres y que la conexión funciona."
+PING_SYSTEM = "Answer in one short sentence."
+PING_TEXT = "Connection test. Say which model you are and that the connection works."
 
 
 def _load(args: argparse.Namespace) -> ProjectConfig:
@@ -28,16 +28,16 @@ def _load(args: argparse.Namespace) -> ProjectConfig:
 
 def cmd_check(args: argparse.Namespace) -> int:
     project = _load(args)
-    print(f"Proyecto: {project.root}")
-    print("\nModelos:")
+    print(f"Project: {project.root}")
+    print("\nModels:")
     for name, m in sorted(project.models.items()):
         print(f"  {name:<16} {m.provider:<10} {m.model}  (effort={m.effort or '-'})")
     print("\nRuns:")
     for name, r in sorted(project.runs.items()):
-        print(f"  {name:<16} personaje={r.character} directiva={r.directive}")
+        print(f"  {name:<16} character={r.character} directive={r.directive}")
         for role, model in r.roles.items():
             print(f"      {role:<13} -> {model}")
-    print("\nConfiguración válida.")
+    print("\nConfiguration is valid.")
     return 0
 
 
@@ -45,7 +45,7 @@ def cmd_run(args: argparse.Namespace) -> int:
     project = _load(args)
     with RunSession(project, args.profile) as session:
         pass
-    print(f"Run creada: {session.dir}")
+    print(f"Run created: {session.dir}")
     return 0
 
 
@@ -62,12 +62,12 @@ def cmd_ping(args: argparse.Namespace) -> int:
         try:
             response = provider.complete(request)
         except LLMError as e:
-            print(f"Error del modelo ({provider.profile.name}): {e}", file=sys.stderr)
+            print(f"Model error ({provider.profile.name}): {e}", file=sys.stderr)
             session.finish("error", error=str(e))
             return 1
     print(f"[{response.provider}/{response.model}] {response.text}")
     print(
-        f"latencia={response.latency_ms:.0f} ms  "
+        f"latency={response.latency_ms:.0f} ms  "
         f"tokens in/out={response.usage.input_tokens}/{response.usage.output_tokens}"
     )
     print(f"Run: {session.dir}")
@@ -79,7 +79,7 @@ def cmd_events(args: argparse.Namespace) -> int:
     if path.is_dir():
         path = path / "events.jsonl"
     if not path.is_file():
-        print(f"No existe {path}", file=sys.stderr)
+        print(f"{path} does not exist", file=sys.stderr)
         return 1
     for event in read_events(path):
         if args.type and event.type != args.type:
@@ -91,24 +91,24 @@ def cmd_events(args: argparse.Namespace) -> int:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="aibh", description="aibecomeshuman")
-    parser.add_argument("--root", help="raíz del proyecto (por defecto, se busca desde aquí)")
+    parser.add_argument("--root", help="project root (searched upwards from here by default)")
     sub = parser.add_subparsers(dest="command", required=True)
 
-    sub.add_parser("check", help="valida la configuración").set_defaults(func=cmd_check)
+    sub.add_parser("check", help="validate the configuration").set_defaults(func=cmd_check)
 
-    run = sub.add_parser("run", help="crea una run vacía")
+    run = sub.add_parser("run", help="create an empty run")
     run.add_argument("-p", "--profile", default="default")
     run.set_defaults(func=cmd_run)
 
-    ping = sub.add_parser("ping", help="una llamada de prueba al modelo de un rol")
+    ping = sub.add_parser("ping", help="one test call to a role's model")
     ping.add_argument("-p", "--profile", default="default")
     ping.add_argument("-r", "--role", default="decider")
-    ping.add_argument("text", nargs="?", help="texto a enviar (opcional)")
+    ping.add_argument("text", nargs="?", help="text to send (optional)")
     ping.set_defaults(func=cmd_ping)
 
-    events = sub.add_parser("events", help="muestra el registro de eventos de una run")
+    events = sub.add_parser("events", help="print a run's event log")
     events.add_argument("run_dir")
-    events.add_argument("-t", "--type", help="filtra por tipo de evento")
+    events.add_argument("-t", "--type", help="filter by event type")
     events.set_defaults(func=cmd_events)
     return parser
 

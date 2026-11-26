@@ -16,7 +16,7 @@ from aibecomeshuman.llm.types import ImagePart, LLMError, LLMRefusal, LLMRequest
 SCHEMA = {
     "type": "object",
     "properties": {
-        "choice": {"type": "string", "enum": ["calmar", "presionar"]},
+        "choice": {"type": "string", "enum": ["calm", "pressure"]},
         "confidence": {"type": "number"},
         "evidence": {"type": "array", "items": {"type": "string"}, "minItems": 1},
     },
@@ -29,35 +29,35 @@ def fake_profile(**options) -> ModelProfile:
     return ModelProfile(name="fake", provider="fake", model="fake-1", options=options)
 
 
-def req(text: str = "hola", **kw) -> LLMRequest:
+def req(text: str = "hello", **kw) -> LLMRequest:
     return LLMRequest(purpose="test", messages=[Message.user(text)], **kw)
 
 
-# -- proveedor falso ---------------------------------------------------------------
+# -- fake provider -------------------------------------------------------------
 
 
 def test_fake_scripted_then_echo() -> None:
-    provider = FakeProvider(fake_profile(responses=["uno"]))
-    assert provider.complete(req()).text == "uno"
-    assert provider.complete(req("eco")).text.endswith("eco")
+    provider = FakeProvider(fake_profile(responses=["one"]))
+    assert provider.complete(req()).text == "one"
+    assert provider.complete(req("echo")).text.endswith("echo")
     assert len(provider.calls) == 2
 
 
 def test_fake_generates_schema_conforming_json() -> None:
     response = FakeProvider(fake_profile()).complete(req(json_schema=SCHEMA))
-    assert response.parsed == {"choice": "calmar", "confidence": 0.0, "evidence": ["fake"]}
+    assert response.parsed == {"choice": "calm", "confidence": 0.0, "evidence": ["fake"]}
 
 
 def test_fake_scripted_invalid_json_raises() -> None:
     with pytest.raises(LLMError):
-        FakeProvider(fake_profile(responses=["no json"])).complete(req(json_schema=SCHEMA))
+        FakeProvider(fake_profile(responses=["not json"])).complete(req(json_schema=SCHEMA))
 
 
 def test_example_from_schema_handles_nullable() -> None:
     assert example_from_schema({"type": ["null", "integer"]}) == 0
 
 
-# -- huella y redacción --------------------------------------------------------------
+# -- fingerprint and redaction -------------------------------------------------
 
 
 def test_fingerprint_is_stable_and_content_sensitive() -> None:
@@ -74,35 +74,35 @@ def test_redacted_replaces_image_data_with_hash() -> None:
     assert "data_b64" not in part and len(part["sha256"]) == 64
 
 
-# -- grabación y cassette ------------------------------------------------------------
+# -- recording and cassette ----------------------------------------------------
 
 
 def test_recording_then_cassette_replays_identically(tmp_path: Path) -> None:
     calls = tmp_path / "llm_calls.jsonl"
     events = EventLog(tmp_path / "events.jsonl")
     recorder = RecordingProvider(
-        FakeProvider(fake_profile(responses=["grabado"])), calls, role="decider", events=events
+        FakeProvider(fake_profile(responses=["recorded"])), calls, role="decider", events=events
     )
-    original = recorder.complete(req("situación"))
+    original = recorder.complete(req("situation"))
 
     record = json.loads(calls.read_text(encoding="utf-8").strip())
-    assert record["role"] == "decider" and record["response"]["text"] == "grabado"
+    assert record["role"] == "decider" and record["response"]["text"] == "recorded"
 
     llm_events = [e for e in events if e.type == "llm.call"]
     assert llm_events[0].payload["ok"] is True
-    assert "text" not in llm_events[0].payload  # el registro no guarda contenido
+    assert "text" not in llm_events[0].payload  # the event log stores no content
 
     cassette = CassetteProvider(fake_profile(), calls)
-    assert cassette.complete(req("situación")) == original
+    assert cassette.complete(req("situation")) == original
     with pytest.raises(LLMError, match="cassette"):
-        cassette.complete(req("otra situación"))
+        cassette.complete(req("another situation"))
 
 
 def test_recording_logs_errors_and_reraises(tmp_path: Path) -> None:
     calls = tmp_path / "llm_calls.jsonl"
     events = EventLog(tmp_path / "events.jsonl")
     recorder = RecordingProvider(
-        FakeProvider(fake_profile(responses=["no json"])), calls, role="judge", events=events
+        FakeProvider(fake_profile(responses=["not json"])), calls, role="judge", events=events
     )
     with pytest.raises(LLMError):
         recorder.complete(req(json_schema=SCHEMA))
@@ -110,7 +110,7 @@ def test_recording_logs_errors_and_reraises(tmp_path: Path) -> None:
     assert [e.payload["ok"] for e in events if e.type == "llm.call"] == [False]
 
 
-# -- adaptador Anthropic (sin red: cliente simulado) ---------------------------------
+# -- Anthropic adapter (no network: stubbed client) ----------------------------
 
 
 class StubMessages:
@@ -147,7 +147,7 @@ def anthropic_profile(**kw) -> ModelProfile:
 
 
 def test_anthropic_builds_params_and_parses_structured_output() -> None:
-    client, plain, beta = stub_client(stub_response('{"choice": "calmar"}'))
+    client, plain, beta = stub_client(stub_response('{"choice": "calm"}'))
     provider = AnthropicProvider(anthropic_profile(effort="low"), client=client)
     request = LLMRequest(
         purpose="decide",
@@ -157,7 +157,7 @@ def test_anthropic_builds_params_and_parses_structured_output() -> None:
     )
     response = provider.complete(request)
 
-    assert response.parsed == {"choice": "calmar"}
+    assert response.parsed == {"choice": "calm"}
     assert response.usage.input_tokens == 10 and response.usage.cache_read_tokens == 0
     assert response.request_id == "req_123"
     assert beta.kwargs is None
@@ -175,7 +175,7 @@ def test_anthropic_builds_params_and_parses_structured_output() -> None:
 
 
 def test_anthropic_uses_server_fallback_when_enabled() -> None:
-    client, plain, beta = stub_client(stub_response("hola"))
+    client, plain, beta = stub_client(stub_response("hello"))
     AnthropicProvider(anthropic_profile(refusal_fallback=True), client=client).complete(req())
     assert plain.kwargs is None
     assert beta.kwargs["betas"] == [FALLBACK_BETA] and beta.kwargs["fallbacks"] == "default"
@@ -188,6 +188,6 @@ def test_anthropic_refusal_raises() -> None:
 
 
 def test_anthropic_truncated_structured_output_raises() -> None:
-    client, _, _ = stub_client(stub_response('{"choice": "cal', stop_reason="max_tokens"))
+    client, _, _ = stub_client(stub_response('{"choice": "ca', stop_reason="max_tokens"))
     with pytest.raises(LLMError, match="max_tokens"):
         AnthropicProvider(anthropic_profile(), client=client).complete(req(json_schema=SCHEMA))

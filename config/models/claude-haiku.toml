@@ -1,4 +1,4 @@
-# Modelo rápido y barato: observador de fotogramas y elecciones con temporizador.
+# Fast, cheap model: frame observer and timed choices.
 provider = "anthropic"
 model = "claude-haiku-5-5"
 effort = "low"

@@ -1,4 +1,4 @@
-"""Formato interno de mensajes, independiente del proveedor."""
+"""Internal, provider-independent message format."""
 
 from __future__ import annotations
 
@@ -37,19 +37,19 @@ class Message(BaseModel):
 
 
 class LLMRequest(BaseModel):
-    purpose: str = Field(description="Etiqueta de la tarea, para logs (p. ej. 'decide.dialogue')")
+    purpose: str = Field(description="Task label for logs (e.g. 'decide.dialogue')")
     system: str = ""
     messages: list[Message]
     json_schema: dict[str, Any] | None = None
     max_tokens: int | None = None
 
     def fingerprint(self) -> str:
-        """Huella estable del contenido: misma petición -> misma huella (para cassettes)."""
+        """Stable content hash: same request -> same fingerprint (used by cassettes)."""
         canonical = json.dumps(self.model_dump(mode="json"), sort_keys=True, ensure_ascii=False)
         return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
     def redacted(self) -> dict[str, Any]:
-        """Versión para logs: las imágenes se sustituyen por su hash (no inflan el fichero)."""
+        """Log-friendly version: images are replaced by their hash (keeps files small)."""
         data = self.model_dump(mode="json")
         for message in data["messages"]:
             for part in message["content"]:
@@ -83,8 +83,8 @@ class LLMResponse(BaseModel):
 
 
 class LLMError(Exception):
-    """Fallo de la capa de modelos (red, formato, cassette sin entrada...)."""
+    """Model layer failure (network, format, missing cassette entry...)."""
 
 
 class LLMRefusal(LLMError):
-    """El modelo rechazó la petición."""
+    """The model refused the request."""

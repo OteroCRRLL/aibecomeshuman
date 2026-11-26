@@ -1,9 +1,9 @@
-"""Grabación y reproducción de llamadas a modelos.
+"""Recording and replay of model calls.
 
-- `RecordingProvider` envuelve a cualquier proveedor: guarda cada llamada en JSONL y
-  publica un evento `llm.call` (sin contenido, solo métricas) en el registro de la run.
-- `CassetteProvider` reproduce un fichero grabado: misma petición -> misma respuesta,
-  sin red ni coste. Base de las pruebas repetibles y de la arena multi-modelo.
+- `RecordingProvider` wraps any provider: it stores every call as JSONL and publishes an
+  `llm.call` event (metrics only, no content) to the run's event log.
+- `CassetteProvider` replays a recorded file: same request -> same response, with no
+  network and no cost. The basis for repeatable tests and the multi-model arena.
 """
 
 from __future__ import annotations
@@ -92,7 +92,7 @@ class RecordingProvider:
 
 
 class CassetteProvider:
-    """Reproduce respuestas grabadas, indexadas por huella de la petición."""
+    """Replays recorded responses, indexed by request fingerprint."""
 
     def __init__(self, profile: ModelProfile, path: Path) -> None:
         self.profile = profile
@@ -115,6 +115,6 @@ class CassetteProvider:
             return self._responses[request.fingerprint()]
         except KeyError:
             raise LLMError(
-                f"la cassette no tiene respuesta para esta petición ({request.purpose}); "
-                "¿ha cambiado el prompt desde que se grabó?"
+                f"the cassette has no response for this request ({request.purpose}); "
+                "has the prompt changed since it was recorded?"
             ) from None

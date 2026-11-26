@@ -1,8 +1,8 @@
-# Modelo falso: sin red ni coste. Para pruebas, simulación y CI.
+# Fake model: no network, no cost. For tests, simulation and CI.
 provider = "fake"
 model = "fake-1"
 supports_vision = true
 
 [options]
-# responses = ["respuesta 1", "respuesta 2"]   # respuestas guionizadas, en orden
+# responses = ["response 1", "response 2"]   # scripted responses, in order
 latency_ms = 0

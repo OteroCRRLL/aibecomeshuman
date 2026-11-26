@@ -1,4 +1,4 @@
-"""Puerto de modelos: lo único que el resto del sistema conoce de un LLM."""
+"""Model port: the only thing the rest of the system knows about an LLM."""
 
 from __future__ import annotations
 

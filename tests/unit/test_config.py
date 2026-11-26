@@ -24,25 +24,26 @@ def test_finds_root_from_subdirectory(project_dir: Path) -> None:
 
 def test_unknown_model_reference_fails(project_dir: Path) -> None:
     (project_dir / "config" / "runs" / "broken.toml").write_text(
-        'character = "connor"\n[roles]\ndecider = "no-existe"\n', encoding="utf-8"
+        'character = "connor"\n[roles]\ndecider = "missing-model"\n', encoding="utf-8"
     )
-    with pytest.raises(ConfigError, match="no-existe"):
+    with pytest.raises(ConfigError, match="missing-model"):
         load_project(project_dir)
 
 
 def test_missing_directive_file_fails(project_dir: Path) -> None:
     (project_dir / "config" / "runs" / "broken.toml").write_text(
-        'character = "connor"\ndirective = "caos"\n[roles]\ndecider = "fake"\n', encoding="utf-8"
+        'character = "connor"\ndirective = "chaos"\n[roles]\ndecider = "fake"\n',
+        encoding="utf-8",
     )
-    with pytest.raises(ConfigError, match="directives/caos.md"):
+    with pytest.raises(ConfigError, match="directives/chaos.md"):
         load_project(project_dir)
 
 
 def test_unknown_role_fails(project_dir: Path) -> None:
     (project_dir / "config" / "runs" / "broken.toml").write_text(
-        'character = "connor"\n[roles]\ndecider = "fake"\npiloto = "fake"\n', encoding="utf-8"
+        'character = "connor"\n[roles]\ndecider = "fake"\npilot = "fake"\n', encoding="utf-8"
     )
-    with pytest.raises(ConfigError, match="piloto"):
+    with pytest.raises(ConfigError, match="pilot"):
         load_project(project_dir)
 
 

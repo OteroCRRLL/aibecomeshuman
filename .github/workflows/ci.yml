@@ -10,9 +10,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
-      - name: Instalar Python y dependencias
+      - name: Install Python and dependencies
         run: uv sync --python 3.12
       - name: Lint
         run: uv run ruff check .
-      - name: Pruebas (sin juego ni APIs reales)
+      - name: Tests (no game, no real APIs)
         run: uv run pytest

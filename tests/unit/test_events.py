@@ -58,6 +58,6 @@ def test_truncated_last_line_is_ignored(tmp_path: Path) -> None:
     log = EventLog(tmp_path / "events.jsonl")
     log.emit("a", source="test")
     with log.path.open("a", encoding="utf-8") as f:
-        f.write('{"seq": 2, "ts": "2038-')  # cierre brusco a mitad de escritura
+        f.write('{"seq": 2, "ts": "2038-')  # abrupt shutdown mid-write
 
     assert [e.seq for e in read_events(log.path)] == [1]

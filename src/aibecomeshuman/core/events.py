@@ -1,7 +1,7 @@
-"""Registro de eventos append-only: la única fuente de verdad de una partida.
+"""Append-only event log: the single source of truth for a run.
 
-Percepción, control y cognición publican eventos aquí. Memoria, overlay y logs de
-montaje son proyecciones que se construyen leyéndolos (en vivo o reproduciendo el fichero).
+Perception, control and cognition publish events here. Memory, the overlay and the
+editing markers are projections built by reading them (live, or by replaying the file).
 """
 
 from __future__ import annotations
@@ -35,7 +35,7 @@ Handler = Callable[[Event], None]
 
 
 def read_events(path: Path) -> Iterator[Event]:
-    """Lee un fichero de eventos. Ignora una última línea truncada (cierre brusco)."""
+    """Read an event file. A truncated last line (abrupt shutdown) is skipped."""
     with path.open(encoding="utf-8") as f:
         for lineno, line in enumerate(f, start=1):
             line = line.strip()
@@ -44,14 +44,14 @@ def read_events(path: Path) -> Iterator[Event]:
             try:
                 yield Event.model_validate_json(line)
             except ValueError:
-                log.warning("Línea %d de %s ilegible; se ignora", lineno, path)
+                log.warning("Line %d of %s is unreadable; skipping", lineno, path)
 
 
 class EventLog:
-    """Escribe eventos en JSONL y los reparte a los suscriptores en el mismo hilo.
+    """Writes events as JSONL and dispatches them to subscribers on the same thread.
 
-    Un fallo en un suscriptor se registra pero no impide guardar el evento ni
-    avisar al resto: el registro nunca se pierde por un error de una proyección.
+    A failing subscriber is logged but never prevents the event from being stored or
+    delivered to the others: the log is never lost because a projection crashed.
     """
 
     def __init__(self, path: Path, clock: Clock | None = None) -> None:
@@ -75,7 +75,7 @@ class EventLog:
         return self._seq
 
     def subscribe(self, event_type: str, handler: Handler) -> None:
-        """Suscribe a un tipo concreto (`"llm.call"`) o a todos (`"*"`)."""
+        """Subscribe to one event type (`"llm.call"`) or to all of them (`"*"`)."""
         self._subscribers[event_type].append(handler)
 
     def emit(self, type: str, source: str, payload: dict[str, Any] | None = None) -> Event:
@@ -95,7 +95,7 @@ class EventLog:
             try:
                 handler(event)
             except Exception:
-                log.exception("Suscriptor falló procesando %s #%d", event.type, event.seq)
+                log.exception("Subscriber failed handling %s #%d", event.type, event.seq)
         return event
 
     def __iter__(self) -> Iterator[Event]:

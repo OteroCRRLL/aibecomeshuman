@@ -1,4 +1,4 @@
-"""Adaptador para la API de Claude (SDK oficial `anthropic`)."""
+"""Adapter for the Claude API (official `anthropic` SDK)."""
 
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ from aibecomeshuman.llm.types import (
     Usage,
 )
 
-# Reintento en servidor si el modelo rechaza la petición; el API elige el modelo de respaldo.
+# Server-side retry when the model refuses a request; the API picks the fallback model.
 FALLBACK_BETA = "server-side-fallback-2026-07-01"
 
 
@@ -31,7 +31,7 @@ class AnthropicProvider:
         clock: Clock | None = None,
     ) -> None:
         self.profile = profile
-        # Sin clave explícita: el SDK la resuelve (ANTHROPIC_API_KEY o perfil de `ant auth login`).
+        # No explicit key: the SDK resolves it (ANTHROPIC_API_KEY or an `ant auth login` profile).
         self._client = client or anthropic.Anthropic(timeout=profile.timeout_s)
         self._clock = clock or SystemClock()
 
@@ -64,28 +64,28 @@ class AnthropicProvider:
             else:
                 response = self._client.messages.create(**params)
         except anthropic.APIConnectionError as e:
-            raise LLMError(f"sin conexión con la API de Anthropic: {e}") from e
+            raise LLMError(f"cannot reach the Anthropic API: {e}") from e
         except anthropic.RateLimitError as e:
-            raise LLMError(f"límite de peticiones alcanzado: {e.message}") from e
+            raise LLMError(f"rate limit reached: {e.message}") from e
         except anthropic.APIStatusError as e:
-            raise LLMError(f"error {e.status_code} de la API de Anthropic: {e.message}") from e
+            raise LLMError(f"Anthropic API error {e.status_code}: {e.message}") from e
         latency_ms = (self._clock.monotonic() - started) * 1000
 
         if response.stop_reason == "refusal":
             details = getattr(response, "stop_details", None)
             category = getattr(details, "category", None) if details else None
-            raise LLMRefusal(f"el modelo rechazó la petición (categoría: {category})")
+            raise LLMRefusal(f"the model refused the request (category: {category})")
 
         text = "".join(block.text for block in response.content if block.type == "text")
 
         parsed = None
         if request.json_schema is not None:
             if response.stop_reason == "max_tokens":
-                raise LLMError("respuesta estructurada cortada por max_tokens")
+                raise LLMError("structured response truncated by max_tokens")
             try:
                 parsed = json.loads(text)
             except json.JSONDecodeError as e:
-                raise LLMError(f"respuesta estructurada no es JSON válido: {e}") from e
+                raise LLMError(f"structured response is not valid JSON: {e}") from e
 
         usage = response.usage
         return LLMResponse(

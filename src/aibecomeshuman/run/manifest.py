@@ -1,4 +1,4 @@
-"""Manifiesto de run: todo lo necesario para saber con qué se jugó y poder reconstruirlo."""
+"""Run manifest: everything needed to know what a run was played with and to rebuild it."""
 
 from __future__ import annotations
 
@@ -32,7 +32,7 @@ class RunManifest(BaseModel):
     ended_at: datetime | None = None
     profile: RunProfile
     models: dict[str, ModelProfile]
-    prompts: dict[str, str] = Field(description="ruta relativa -> sha256 de cada prompt usado")
+    prompts: dict[str, str] = Field(description="relative path -> sha256 of each prompt used")
     package_version: str = __version__
     python_version: str = Field(default_factory=lambda: sys.version.split()[0])
     platform: str = Field(default_factory=platform.platform)

@@ -1,4 +1,4 @@
-"""Proveedor falso y determinista para pruebas y simulación (sin red, sin coste)."""
+"""Deterministic fake provider for tests and simulation (no network, no cost)."""
 
 from __future__ import annotations
 
@@ -11,11 +11,11 @@ from aibecomeshuman.llm.types import LLMError, LLMRequest, LLMResponse, Usage
 
 
 class FakeProvider:
-    """Responde, por orden de preferencia:
+    """Answers, in order of preference:
 
-    1. Con la siguiente respuesta guionizada (`responses`, o `options.responses` del perfil).
-    2. Si hay `json_schema`, con un objeto mínimo que cumple el esquema.
-    3. Con un eco del último mensaje del usuario.
+    1. With the next scripted response (`responses`, or the profile's `options.responses`).
+    2. If there is a `json_schema`, with a minimal object that satisfies it.
+    3. With an echo of the last user message.
     """
 
     def __init__(
@@ -54,9 +54,9 @@ class FakeProvider:
             try:
                 parsed = json.loads(text)
             except json.JSONDecodeError as e:
-                raise LLMError(f"respuesta guionizada no es JSON válido: {e}") from e
+                raise LLMError(f"scripted response is not valid JSON: {e}") from e
 
-        # Estimación grosera (~4 caracteres por token); suficiente para probar contabilidad.
+        # Rough estimate (~4 characters per token); good enough to test accounting.
         prompt_chars = len(request.model_dump_json())
         return LLMResponse(
             text=text,
@@ -70,7 +70,7 @@ class FakeProvider:
 
 
 def example_from_schema(schema: dict[str, Any]) -> Any:
-    """Genera el valor mínimo que cumple un JSON Schema sencillo."""
+    """Build the minimal value that satisfies a simple JSON Schema."""
     if "enum" in schema:
         return schema["enum"][0]
     if "const" in schema:

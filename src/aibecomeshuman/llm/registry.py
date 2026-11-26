@@ -1,6 +1,6 @@
-"""Construye el proveedor adecuado a partir de un perfil de modelo.
+"""Builds the right provider from a model profile.
 
-Añadir un proveedor nuevo = escribir su adaptador y registrarlo aquí.
+Adding a new provider = writing its adapter and registering it here.
 """
 
 from __future__ import annotations
@@ -36,5 +36,5 @@ def build_provider(profile: ModelProfile, clock: Clock | None = None) -> LLMProv
     try:
         factory = PROVIDERS[profile.provider]
     except KeyError:
-        raise ValueError(f"proveedor '{profile.provider}' no registrado") from None
+        raise ValueError(f"provider '{profile.provider}' is not registered") from None
     return factory(profile, clock)

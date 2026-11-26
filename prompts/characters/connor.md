@@ -1,27 +1,27 @@
 ---
-estado: plantilla, por completar antes de la fase 1
+status: template, to be filled in before phase 1
 ---
 
-# Ficha de personaje: plantilla
+# Character sheet: template
 
-> Escribe aquí **tu** interpretación del punto de partida del personaje, con tus palabras.
-> No copies diálogos ni textos del juego. Describe solo lo que el personaje sabe de sí
-> mismo **al empezar**: nada de lo que descubrirá más adelante.
+> Write **your own** interpretation of the character's starting point, in your own words.
+> Do not copy dialogue or text from the game. Describe only what the character knows
+> about itself **at the start**: nothing it will discover later.
 
-## Núcleo inmutable
-- Qué es:
-- Su función o misión inicial:
-- A quién responde:
+## Immutable core
+- What it is:
+- Its initial function or mission:
+- Who it answers to:
 
-## Rasgos iniciales (0–10, se moverán con la evolución)
-- Obediencia ↔ autonomía:
-- Empatía:
-- Impulsividad:
-- Confianza en los humanos:
-- (añade los ejes que quieras medir)
+## Initial traits (0–10, they will shift as it evolves)
+- Obedience ↔ autonomy:
+- Empathy:
+- Impulsiveness:
+- Trust in humans:
+- (add any axes you want to track)
 
-## Autodescripción inicial
-Dos o tres frases en primera persona sobre cómo se ve a sí mismo al empezar.
+## Initial self-description
+Two or three sentences in the first person about how it sees itself at the start.
 
-## Forma de hablar
-Tono, registro, muletillas propias (inventadas por ti).
+## Way of speaking
+Tone, register, verbal habits (invented by you).

@@ -1,9 +1,9 @@
-# Modelo potente: decisiones críticas, postura de escena, reflexión de personalidad.
+# Strong model: critical decisions, scene stance, personality reflection.
 provider = "anthropic"
 model = "claude-opus-5-5"
 effort = "high"
 max_tokens = 16000
 timeout_s = 120
 supports_vision = true
-# Si el modelo rechaza una petición, la API la reintenta en un modelo de respaldo.
+# If the model refuses a request, the API retries it on a fallback model.
 refusal_fallback = true

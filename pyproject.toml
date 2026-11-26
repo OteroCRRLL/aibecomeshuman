@@ -1,7 +1,7 @@
 [project]
 name = "aibecomeshuman"
 version = "0.1.0"
-description = "Agente de IA que juega a Detroit: Become Human con control híbrido, memoria y personalidad evolutiva."
+description = "AI agent that plays Detroit: Become Human with hybrid control, memory and an evolving personality."
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
@@ -31,7 +31,7 @@ packages = ["src/aibecomeshuman"]
 testpaths = ["tests"]
 addopts = "-q -m 'not live'"
 markers = [
-    "live: llama a APIs reales (requiere credenciales); se excluye por defecto con -m 'not live'",
+    "live: calls real APIs (requires credentials); excluded by default via -m 'not live'",
 ]
 
 [tool.ruff]

@@ -1,9 +1,9 @@
-# Ajustes globales del proyecto. Las rutas son relativas a la raíz del proyecto.
+# Global project settings. Paths are relative to the project root.
 
 [paths]
 runs_dir = "runs"
 prompts_dir = "prompts"
 
 [llm]
-# Guarda cada llamada en runs/<run>/llm_calls.jsonl (reproducible como cassette).
+# Store every call in runs/<run>/llm_calls.jsonl (replayable as a cassette).
 record_calls = true

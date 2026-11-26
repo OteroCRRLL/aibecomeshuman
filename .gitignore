@@ -8,18 +8,18 @@ dist/
 build/
 *.egg-info/
 
-# Secretos
+# Secrets
 .env
 
-# Salidas de partidas (eventos, manifiestos, llamadas grabadas)
+# Run outputs (events, manifests, recorded calls)
 runs/
 
-# Capturas y grabaciones del juego: contenido con copyright, nunca al repo.
-# Solo se versionan las etiquetas (data/labels/).
+# Game captures and recordings: copyrighted content, never committed.
+# Only the labels (data/labels/) are versioned.
 data/*
 !data/labels/
 !data/README.md
 
-# Sistema
+# OS
 .DS_Store
 Thumbs.db

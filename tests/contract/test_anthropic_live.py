@@ -1,4 +1,4 @@
-"""Prueba de contrato contra la API real. Excluida por defecto (marcador `live`).
+"""Contract test against the real API. Excluded by default (`live` marker).
 
     uv run pytest -m live
 """
@@ -29,7 +29,7 @@ def test_structured_output_roundtrip(model_name: str) -> None:
     response = build_provider(profile).complete(
         LLMRequest(
             purpose="contract",
-            messages=[Message.user("Devuelve ok=true y una nota de tres palabras.")],
+            messages=[Message.user("Return ok=true and a three-word note.")],
             json_schema=SCHEMA,
             max_tokens=2000,
         )

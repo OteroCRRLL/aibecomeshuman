@@ -1,92 +1,93 @@
 # aibecomeshuman
 
-Un agente de IA que juega a *Detroit: Become Human* en PC. Proyecto documentado para YouTube.
+An AI agent that plays *Detroit: Become Human* on PC, documented for YouTube.
 
-- **Control híbrido**: tú exploras, la IA observa y memoriza. La IA toma el mando en
-  diálogos, decisiones y deducciones. Los QTE son siempre manuales.
-- **Memoria y personalidad que evolucionan** con lo que vive el personaje, con coherencia
-  y sin depender de un historial gigante.
-- **Directivas de run** intercambiables sin tocar código.
-- **Sin metagaming**: el agente decide solo con lo que ha visto, su personalidad y la directiva.
-- **Cualquier modelo**: proveedor por rol, configurable, y comparación entre modelos.
-- **Pruebas sin el juego**: simulador, grabaciones y modelo falso.
+- **Hybrid control**: you explore while the AI watches and remembers. The AI takes over
+  in dialogue, decisions and deductions. QTEs are always manual.
+- **Evolving memory and personality** shaped by what the character lives through, kept
+  coherent without relying on a giant history.
+- **Swappable run directives**, with no code changes.
+- **No metagaming**: the agent decides only from what it has seen, its personality and
+  the directive.
+- **Any model**: one provider per role, configurable, with model-vs-model comparison.
+- **Testing without the game**: simulator, recordings and a fake model.
 
-Arquitectura y decisiones: [docs/architecture.md](docs/architecture.md).
+Architecture and decisions: [docs/architecture.md](docs/architecture.md).
 
-## Estado
+## Status
 
-**Fase 0, cimientos.** Configuración, registro de eventos, capa de modelos (falso y
-Anthropic), grabación y reproducción de llamadas, manifiesto de run, CLI, pruebas y CI.
+**Phase 0, foundations.** Configuration, event log, model layer (fake + Anthropic),
+call recording and replay, run manifest, CLI, tests and CI.
 
-| Fase | Contenido | Estado |
+| Phase | Scope | Status |
 |---|---|---|
-| 0 | Cimientos | ✅ |
-| 1 | Simulador de escenarios + decisor + directivas | ⏳ |
-| 2 | Memoria y personalidad | |
-| 3 | Percepción offline (grabaciones) | |
-| 4 | Guardia anti-metagaming y evaluaciones | |
-| 5 | Control en modo sombra (la IA propone, tú ejecutas) | |
-| 6 | Autonomía en vivo | |
-| 7 | Overlay y OBS | |
-| 8 | Arena multi-modelo | |
+| 0 | Foundations | ✅ (real-model ping pending) |
+| 1 | Scenario simulator + decider + directives | ⏳ next |
+| 2 | Memory and personality | |
+| 3 | Offline perception (recordings) | |
+| 4 | Anti-metagaming guard and evaluations | |
+| 5 | Shadow-mode control (the AI suggests, you execute) | |
+| 6 | Live autonomy | |
+| 7 | Overlay and OBS | |
+| 8 | Multi-model arena | |
 
-## Puesta en marcha
+## Getting started
 
-Requisitos: Python ≥ 3.12 y [uv](https://docs.astral.sh/uv/).
+Requirements: Python ≥ 3.12 and [uv](https://docs.astral.sh/uv/).
 
 ```powershell
-uv sync                     # crea .venv e instala dependencias
-uv run aibh check           # valida la configuración
-uv run aibh run -p offline  # run vacía con el modelo falso
-uv run aibh ping -p offline # una llamada de prueba (modelo falso)
-uv run pytest               # pruebas (sin juego ni APIs)
+uv sync                     # create .venv and install dependencies
+uv run aibh check           # validate the configuration
+uv run aibh run -p offline  # empty run with the fake model
+uv run aibh ping -p offline # one test call (fake model)
+uv run pytest               # tests (no game, no APIs)
 ```
 
-Con un modelo real (necesita `ANTHROPIC_API_KEY` o `ant auth login`):
+With a real model (needs `ANTHROPIC_API_KEY` or `ant auth login`):
 
 ```powershell
 uv run aibh ping -p default -r decider        # Opus
 uv run aibh ping -p default -r decider_fast   # Haiku
-uv run pytest -m live                         # pruebas de contrato contra la API
+uv run pytest -m live                         # contract tests against the API
 ```
 
-Cada run deja una carpeta en `runs/` con `manifest.json` (modelos, prompts, coste),
-`events.jsonl` (todo lo que pasó) y `llm_calls.jsonl` (cada llamada, reproducible).
+Each run creates a folder in `runs/` with `manifest.json` (models, prompts, cost),
+`events.jsonl` (everything that happened) and `llm_calls.jsonl` (every call, replayable).
 
 ```powershell
-uv run aibh events runs/<carpeta>
-uv run aibh events runs/<carpeta> -t llm.call
+uv run aibh events runs/<folder>
+uv run aibh events runs/<folder> -t llm.call
 ```
 
-## Organización
+## Layout
 
 ```
-config/            ajustes, perfiles de modelo y perfiles de run (TOML)
-prompts/           constitución, personajes, directivas (Markdown)
+config/            settings, model profiles and run profiles (TOML)
+prompts/           constitution, characters, directives (Markdown)
 src/aibecomeshuman/
-  core/            registro de eventos y reloj
-  llm/             puerto de modelos, adaptadores, grabación/cassettes
-  run/             sesión de run y manifiesto
-  cli/             comando aibh
+  core/            event log and clock
+  llm/             model port, adapters, recording/cassettes
+  run/             run session and manifest
+  cli/             the aibh command
 tests/             unit/ · integration/ · contract/ (live)
-docs/              arquitectura y diario de desarrollo
-data/              capturas locales (no se suben a git)
-runs/              salidas de partidas (no se suben a git)
+docs/              architecture and dev log
+data/              local captures (not committed)
+runs/              run outputs (not committed)
 ```
 
-## Cambiar de modelo o de directiva
+## Changing the model or the directive
 
-- **Modelo**: edita `config/runs/<run>.toml` y asigna otro perfil a un rol, o crea un
-  perfil nuevo en `config/models/`.
-- **Directiva**: crea `prompts/directives/<nombre>.md` y pon `directive = "<nombre>"` en el run.
+- **Model**: edit `config/runs/<run>.toml` and assign another profile to a role, or
+  create a new profile in `config/models/`.
+- **Directive**: create `prompts/directives/<name>.md` and set `directive = "<name>"` in the run.
 
-## Licencia
+## License
 
-[MIT](LICENSE): el código de este repositorio se puede usar, copiar y modificar
-libremente, manteniendo el aviso de copyright.
+[MIT](LICENSE): the code in this repository can be freely used, copied and modified,
+as long as the copyright notice is kept.
 
-## Aviso
+## Disclaimer
 
-Proyecto de fans sin relación con los titulares de *Detroit: Become Human*. El
-repositorio no contiene recursos del juego: capturas, grabaciones y textos del juego
-se quedan en local (`data/`, ignorado por git).
+Fan project, not affiliated with the rights holders of *Detroit: Become Human*. The
+repository contains no game assets: game captures, recordings and text stay local
+(`data/`, ignored by git).

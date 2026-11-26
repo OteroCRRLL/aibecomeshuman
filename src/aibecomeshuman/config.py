@@ -1,15 +1,15 @@
-"""Carga y validación de la configuración del proyecto.
+"""Loading and validation of the project configuration.
 
-Estructura en disco (relativa a la raíz del proyecto):
+On-disk layout (relative to the project root):
 
-    config/default.toml          ajustes globales
-    config/models/<nombre>.toml  un perfil de modelo por fichero
-    config/runs/<nombre>.toml    un perfil de run por fichero
-    prompts/characters/<x>.md    fichas de personaje referenciadas por los runs
-    prompts/directives/<x>.md    directivas referenciadas por los runs
+    config/default.toml          global settings
+    config/models/<name>.toml    one model profile per file
+    config/runs/<name>.toml      one run profile per file
+    prompts/characters/<x>.md    character sheets referenced by runs
+    prompts/directives/<x>.md    directives referenced by runs
 
-Todo se valida al cargar: un run que apunte a un modelo, personaje o directiva
-inexistente falla antes de empezar a jugar, no a mitad de partida.
+Everything is validated on load: a run pointing to a missing model, character or
+directive fails before play starts, not halfway through a session.
 """
 
 from __future__ import annotations
@@ -20,14 +20,14 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
-# Roles técnicos que puede pedir el sistema. Cada run asigna un perfil de modelo a cada uno.
+# Technical roles the system can request. Each run assigns a model profile to each one.
 ROLES: tuple[str, ...] = (
-    "observer",  # VLM barato: convierte fotogramas clave en observaciones
-    "decider",  # decisiones críticas sin temporizador + mantener la postura de escena
-    "decider_fast",  # elecciones con temporizador: postura + opciones -> opción
-    "reflector",  # evolución de personalidad al cerrar escenas/capítulos
-    "judge",  # detector de metagaming
-    "summarizer",  # consolidación de memoria
+    "observer",  # cheap VLM: turns keyframes into observations
+    "decider",  # critical untimed decisions + maintaining the scene stance
+    "decider_fast",  # timed choices: stance + options -> option
+    "reflector",  # personality evolution when closing scenes/chapters
+    "judge",  # metagaming detector
+    "summarizer",  # memory consolidation
 )
 
 Provider = Literal["fake", "anthropic"]
@@ -64,10 +64,10 @@ class ModelProfile(_Strict):
     effort: Effort | None = None
     timeout_s: float = Field(default=120.0, gt=0)
     supports_vision: bool = False
-    # Reintento automático en otro modelo si el principal rechaza la petición
-    # (solo proveedores/modelos que lo soportan; ver docs/architecture.md).
+    # Automatic retry on another model if the primary one refuses the request
+    # (only providers/models that support it; see docs/architecture.md).
     refusal_fallback: bool = False
-    # Opciones propias del proveedor (p. ej. respuestas guionizadas del proveedor falso).
+    # Provider-specific options (e.g. scripted responses for the fake provider).
     options: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -83,9 +83,9 @@ class RunProfile(_Strict):
     def _known_roles(cls, roles: dict[str, str]) -> dict[str, str]:
         unknown = sorted(set(roles) - set(ROLES))
         if unknown:
-            raise ValueError(f"roles desconocidos: {unknown}. Válidos: {list(ROLES)}")
+            raise ValueError(f"unknown roles: {unknown}. Valid: {list(ROLES)}")
         if "decider" not in roles:
-            raise ValueError("todo run necesita al menos el rol 'decider'")
+            raise ValueError("every run needs at least the 'decider' role")
         return roles
 
 
@@ -111,7 +111,7 @@ class ProjectConfig(BaseModel):
             return self.runs[name]
         except KeyError:
             raise ConfigError(
-                f"perfil de run '{name}' no existe. Disponibles: {sorted(self.runs)}"
+                f"run profile '{name}' does not exist. Available: {sorted(self.runs)}"
             ) from None
 
     def models_for(self, run: RunProfile) -> dict[str, ModelProfile]:
@@ -123,7 +123,7 @@ def _read_toml(path: Path) -> dict[str, Any]:
         with path.open("rb") as f:
             return tomllib.load(f)
     except tomllib.TOMLDecodeError as e:
-        raise ConfigError(f"{path}: TOML inválido: {e}") from e
+        raise ConfigError(f"{path}: invalid TOML: {e}") from e
 
 
 def _load_named(directory: Path, model: type[BaseModel]) -> dict[str, Any]:
@@ -134,7 +134,7 @@ def _load_named(directory: Path, model: type[BaseModel]) -> dict[str, Any]:
         data = _read_toml(file)
         data.setdefault("name", file.stem)
         if data["name"] != file.stem:
-            raise ConfigError(f"{file}: 'name' ({data['name']}) debe coincidir con el fichero")
+            raise ConfigError(f"{file}: 'name' ({data['name']}) must match the file name")
         try:
             items[file.stem] = model.model_validate(data)
         except ValidationError as e:
@@ -143,12 +143,12 @@ def _load_named(directory: Path, model: type[BaseModel]) -> dict[str, Any]:
 
 
 def find_project_root(start: Path | None = None) -> Path:
-    """Sube desde `start` hasta encontrar `config/default.toml`."""
+    """Walk up from `start` until `config/default.toml` is found."""
     current = (start or Path.cwd()).resolve()
     for candidate in (current, *current.parents):
         if (candidate / "config" / "default.toml").is_file():
             return candidate
-    raise ConfigError(f"no se encontró config/default.toml desde {current} hacia arriba")
+    raise ConfigError(f"config/default.toml not found from {current} upwards")
 
 
 def load_project(root: Path | None = None) -> ProjectConfig:
@@ -177,12 +177,12 @@ def _check_references(project: ProjectConfig) -> None:
         for role, model_name in run.roles.items():
             if model_name not in project.models:
                 problems.append(
-                    f"run '{run.name}': rol '{role}' apunta al modelo '{model_name}', "
-                    f"que no existe en config/models/"
+                    f"run '{run.name}': role '{role}' points to model '{model_name}', "
+                    f"which does not exist in config/models/"
                 )
         if not (prompts / "characters" / f"{run.character}.md").is_file():
-            problems.append(f"run '{run.name}': falta prompts/characters/{run.character}.md")
+            problems.append(f"run '{run.name}': missing prompts/characters/{run.character}.md")
         if not (prompts / "directives" / f"{run.directive}.md").is_file():
-            problems.append(f"run '{run.name}': falta prompts/directives/{run.directive}.md")
+            problems.append(f"run '{run.name}': missing prompts/directives/{run.directive}.md")
     if problems:
-        raise ConfigError("configuración inconsistente:\n  - " + "\n  - ".join(problems))
+        raise ConfigError("inconsistent configuration:\n  - " + "\n  - ".join(problems))

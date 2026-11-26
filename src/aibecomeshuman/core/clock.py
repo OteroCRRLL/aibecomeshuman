@@ -1,4 +1,4 @@
-"""Reloj inyectable: real en partida, controlable en pruebas y simulación."""
+"""Injectable clock: real during play, controllable in tests and simulation."""
 
 from __future__ import annotations
 
@@ -9,11 +9,11 @@ from typing import Protocol
 
 class Clock(Protocol):
     def now(self) -> datetime:
-        """Hora de pared (UTC) para marcar eventos."""
+        """Wall-clock time (UTC) used to timestamp events."""
         ...
 
     def monotonic(self) -> float:
-        """Segundos monótonos para medir latencias."""
+        """Monotonic seconds used to measure latency."""
         ...
 
 
@@ -26,7 +26,7 @@ class SystemClock:
 
 
 class FakeClock:
-    """Reloj determinista. Solo avanza cuando se le pide (o `auto_step` por lectura)."""
+    """Deterministic clock. Only advances when told to (or by `auto_step` on each read)."""
 
     def __init__(
         self,

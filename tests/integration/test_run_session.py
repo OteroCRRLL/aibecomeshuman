@@ -5,7 +5,7 @@ import json
 import pytest
 
 from aibecomeshuman.cli.main import main
-from aibecomeshuman.config import ProjectConfig
+from aibecomeshuman.config import ProjectConfig, load_project
 from aibecomeshuman.core.clock import FakeClock
 from aibecomeshuman.core.events import read_events
 from aibecomeshuman.llm.types import LLMRequest, Message
@@ -30,9 +30,9 @@ def test_empty_run_writes_manifest_and_events(project: ProjectConfig, clock: Fak
 def test_llm_calls_are_recorded_and_accounted(project: ProjectConfig, clock: FakeClock) -> None:
     with RunSession(project, "offline", clock=clock) as session:
         decider = session.llm("decider")
-        assert session.llm("decider") is decider  # una instancia por rol
-        decider.complete(LLMRequest(purpose="t", messages=[Message.user("hola")]))
-        decider.complete(LLMRequest(purpose="t", messages=[Message.user("otra vez")]))
+        assert session.llm("decider") is decider  # one instance per role
+        decider.complete(LLMRequest(purpose="t", messages=[Message.user("hello")]))
+        decider.complete(LLMRequest(purpose="t", messages=[Message.user("again")]))
 
     manifest = json.loads((session.dir / "manifest.json").read_text(encoding="utf-8"))
     stats = manifest["usage_by_role"]["decider"]
@@ -45,9 +45,9 @@ def test_llm_calls_are_recorded_and_accounted(project: ProjectConfig, clock: Fak
 def test_exception_marks_run_as_error(project: ProjectConfig) -> None:
     session = RunSession(project, "offline")
     with pytest.raises(RuntimeError), session:
-        raise RuntimeError("fallo de prueba")
+        raise RuntimeError("test failure")
     manifest = json.loads((session.dir / "manifest.json").read_text(encoding="utf-8"))
-    assert manifest["status"] == "error" and "fallo de prueba" in manifest["error"]
+    assert manifest["status"] == "error" and "test failure" in manifest["error"]
 
 
 def test_same_second_runs_get_unique_dirs(project: ProjectConfig) -> None:
@@ -59,26 +59,24 @@ def test_same_second_runs_get_unique_dirs(project: ProjectConfig) -> None:
     assert first.dir != second.dir
 
 
-def test_unassigned_role_raises(project: ProjectConfig, project_dir) -> None:
+def test_unassigned_role_raises(project_dir) -> None:
     (project_dir / "config" / "runs" / "minimal.toml").write_text(
         'character = "connor"\n[roles]\ndecider = "fake"\n', encoding="utf-8"
     )
-    from aibecomeshuman.config import load_project
-
     with RunSession(load_project(project_dir), "minimal") as session, pytest.raises(KeyError):
         session.llm("observer")
 
 
-# -- CLI -------------------------------------------------------------------------
+# -- CLI -----------------------------------------------------------------------
 
 
 def test_cli_check_run_ping_events(project_dir, capsys) -> None:
     root = ["--root", str(project_dir)]
     assert main([*root, "check"]) == 0
     assert main([*root, "run", "-p", "offline"]) == 0
-    assert main([*root, "ping", "-p", "offline", "-r", "decider", "hola agente"]) == 0
+    assert main([*root, "ping", "-p", "offline", "-r", "decider", "hello agent"]) == 0
     out = capsys.readouterr().out
-    assert "[fake/fake-1]" in out and "hola agente" in out
+    assert "[fake/fake-1]" in out and "hello agent" in out
 
     run_dir = sorted((project_dir / "runs").iterdir())[-1]
     assert main(["events", str(run_dir), "-t", "llm.call"]) == 0

@@ -1,10 +1,10 @@
-"""Sesión de run: crea la carpeta de la partida, el registro de eventos, el manifiesto
-y los proveedores de modelo por rol (envueltos en grabación si está activada).
+"""Run session: creates the run folder, the event log, the manifest and the per-role
+model providers (wrapped in recording when enabled).
 
-    runs/<AAAAMMDD-HHMMSS>_<perfil>/
-        manifest.json     con qué se jugó y cuánto costó
-        events.jsonl      registro de eventos (fuente de verdad)
-        llm_calls.jsonl   cada llamada a modelo, reproducible como cassette
+    runs/<YYYYMMDD-HHMMSS>_<profile>/
+        manifest.json     what the run was played with and what it cost
+        events.jsonl      event log (source of truth)
+        llm_calls.jsonl   every model call, replayable as a cassette
 """
 
 from __future__ import annotations
@@ -42,7 +42,7 @@ class RunSession:
         self.events: EventLog | None = None
         self.manifest: RunManifest | None = None
 
-    # -- ciclo de vida -------------------------------------------------------
+    # -- lifecycle -------------------------------------------------------------
 
     def start(self) -> RunSession:
         started = self.clock.now()
@@ -97,19 +97,19 @@ class RunSession:
         if exc is None:
             self.finish("ok")
         elif isinstance(exc, KeyboardInterrupt):
-            self.finish("aborted", error="interrumpido por el operador")
+            self.finish("aborted", error="interrupted by the operator")
         else:
             self.finish("error", error=f"{type(exc).__name__}: {exc}")
 
-    # -- modelos ---------------------------------------------------------------
+    # -- models ----------------------------------------------------------------
 
     def llm(self, role: str) -> LLMProvider:
-        """Proveedor asignado a un rol en este run (se construye la primera vez)."""
+        """Provider assigned to a role in this run (built on first use)."""
         if role in self._providers:
             return self._providers[role]
         _, events = self._require_started()
         if role not in self.profile.roles:
-            raise KeyError(f"el run '{self.profile.name}' no asigna modelo al rol '{role}'")
+            raise KeyError(f"run '{self.profile.name}' assigns no model to role '{role}'")
 
         profile = self.project.models[self.profile.roles[role]]
         provider = self._provider_builder(profile, self.clock)
@@ -121,7 +121,7 @@ class RunSession:
         self._providers[role] = provider
         return provider
 
-    # -- interno -----------------------------------------------------------------
+    # -- internals -------------------------------------------------------------
 
     def _account_llm_call(self, event: Event) -> None:
         manifest, _ = self._require_started()
@@ -152,5 +152,5 @@ class RunSession:
 
     def _require_started(self) -> tuple[RunManifest, EventLog]:
         if self.manifest is None or self.events is None:
-            raise RuntimeError("la sesión no se ha iniciado (llama a start() o usa 'with')")
+            raise RuntimeError("session not started (call start() or use 'with')")
         return self.manifest, self.events

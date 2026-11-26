@@ -13,7 +13,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 
 @pytest.fixture
 def project_dir(tmp_path: Path) -> Path:
-    """Copia de config/ y prompts/ en un directorio temporal (las runs no ensucian el repo)."""
+    """Copy of config/ and prompts/ in a temp directory (runs don't pollute the repo)."""
     shutil.copytree(REPO_ROOT / "config", tmp_path / "config")
     shutil.copytree(REPO_ROOT / "prompts", tmp_path / "prompts")
     return tmp_path

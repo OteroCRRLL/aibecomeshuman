@@ -1,8 +1,8 @@
 ---
-alcance: todos los personajes
-prioridad: matiz            # matiz = colorea la personalidad · orden = la anula si chocan
-moldea_personalidad: true   # las decisiones tomadas bajo esta directiva cuentan para la evolución
+scope: all characters
+priority: flavor             # flavor = colors the personality · order = overrides it on conflict
+shapes_personality: true     # decisions made under this directive count toward evolution
 ---
 
-Métete en tu papel y actúa con libertad dentro de tu personaje. No hay objetivo externo:
-haz lo que harías tú, con lo que sabes y con quien eres en este momento.
+Step into your role and act freely within your character. There is no external goal:
+do what you would do, with what you know and who you are right now.
