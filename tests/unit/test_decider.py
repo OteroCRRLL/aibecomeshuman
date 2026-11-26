@@ -76,13 +76,37 @@ def test_fallback_uses_default_then_first() -> None:
 # -- stance --------------------------------------------------------------------
 
 
+def stance_reply(text: str, changed: bool = True, keywords=("ayudar",)) -> dict:
+    return {
+        "changed": changed,
+        "stance": text,
+        "approach_keywords": list(keywords),
+        "concerns": [],
+    }
+
+
 def test_update_stance_parses_and_keeps_previous_on_failure() -> None:
-    d = decider(scripted({"stance": "Ayudar.", "approach_keywords": ["ayudar"], "concerns": []}))
+    d = decider(scripted(stance_reply("Ayudar.")))
     assert d.update_stance(ctx()).approach_keywords == ["ayudar"]
+    assert d.last_stance_changed is True
 
     d._strong = Failing()
     assert d.update_stance(ctx()) is None
     assert d.stance is not None and d.stance.stance == "Ayudar."
+
+
+def test_unchanged_stance_keeps_the_previous_one() -> None:
+    d = decider(scripted(stance_reply("Ayudar."), stance_reply("Otra cosa.", changed=False)))
+    d.update_stance(ctx())
+    d.update_stance(ctx())
+    assert d.last_stance_changed is False
+    assert d.stance.stance == "Ayudar."
+
+
+def test_first_stance_counts_as_changed_even_if_model_says_no() -> None:
+    d = decider(scripted(stance_reply("Primera.", changed=False)))
+    d.update_stance(ctx())
+    assert d.last_stance_changed is True and d.stance.stance == "Primera."
 
 
 # -- critical decisions --------------------------------------------------------

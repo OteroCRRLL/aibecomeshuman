@@ -132,6 +132,21 @@
 
   <section id="settings">
     <div class="card">
+      <h2>Claude API key</h2>
+      <p class="hint" id="key-state"></p>
+      <div class="grid">
+        <div><label for="api-key">New key (it is saved to the .env file and never shown again)</label>
+          <input type="password" id="api-key" placeholder="sk-ant-..." autocomplete="off"
+                 style="width:100%;padding:7px 9px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--text);font:inherit"></div>
+      </div>
+      <div class="row">
+        <button class="btn" id="save-key">Save key</button>
+        <button class="btn" id="test-key">Test connection</button>
+        <span class="hint" id="key-msg"></span>
+      </div>
+      <p class="hint">The test makes one tiny call to Claude Haiku (about $0.00002).</p>
+    </div>
+    <div class="card">
       <h2>Budget caps (USD)</h2>
       <div class="grid">
         <div><label for="cap-project">Whole project</label><input type="number" id="cap-project" step="0.5" min="0"></div>
@@ -186,10 +201,14 @@ async function loadStatus() {
   const s = await api("/api/status");
   const cap = s.budget.project_cap_usd;
   const pct = cap > 0 ? Math.min(100, (s.project_spent_usd / cap) * 100) : 0;
+  const keyText = !s.api_key_configured ? "not found"
+    : s.api_key_source === "environment" ? "configured (Windows variable)" : "configured (.env)";
+  $("key-state").textContent = s.api_key_configured
+    ? `A key is configured: ${keyText.replace("configured ", "")}. Paste a new one below to replace it.`
+    : "No key configured yet. Paste your key below.";
   $("status").replaceChildren(
     el("span", {}, "API key: ",
-      el("span", { class: "pill " + (s.api_key_configured ? "ok" : "warn") },
-        s.api_key_configured ? "configured" : "not found")),
+      el("span", { class: "pill " + (s.api_key_configured ? "ok" : "warn") }, keyText)),
     el("span", {}, `Project spend: ${usd(s.project_spent_usd)} of $${cap.toFixed(2)} `,
       el("span", { class: "meter" }, el("div", { style: `width:${pct}%` }))),
     el("span", {}, `Per run cap: $${s.budget.run_cap_usd.toFixed(2)}`),
@@ -223,6 +242,9 @@ function makeRenderer(container) {
             ? el("div", { class: "badges" }, p.approach_keywords.map((k) => el("span", { class: "pill info" }, k)))
             : null,
           p.concerns && p.concerns.length ? el("div", { class: "hint" }, "Concerns: " + p.concerns.join(" · ")) : null));
+        break;
+      case "stance.kept":
+        container.append(el("div", { class: "hint" }, "Stance unchanged"));
         break;
       case "stance.failed":
         container.append(el("div", { class: "ev fail" }, "Stance update failed (model error or budget); keeping the previous one."));
@@ -363,6 +385,28 @@ async function loadBudget() {
   $("cap-run").value = s.budget.run_cap_usd;
   $("warn").value = s.budget.warn_ratio;
 }
+$("save-key").addEventListener("click", async () => {
+  $("key-msg").textContent = "";
+  const key = $("api-key").value.trim();
+  if (!key) { $("key-msg").textContent = "Paste a key first."; return; }
+  try {
+    const r = await api("/api/settings/api-key", { method: "PUT", body: JSON.stringify({ key }) });
+    $("api-key").value = "";
+    $("key-msg").textContent = r.overridden_by_environment
+      ? "Saved, but a Windows environment variable with another key takes priority over .env."
+      : "Saved ✓";
+    loadStatus();
+  } catch (e) { $("key-msg").textContent = e.message; }
+});
+$("test-key").addEventListener("click", async () => {
+  $("key-msg").textContent = "Testing…";
+  $("test-key").disabled = true;
+  try {
+    const r = await api("/api/ping", { method: "POST", body: JSON.stringify({}) });
+    $("key-msg").textContent = `Works ✓ ${r.model} answered in ${r.latency_ms} ms: “${r.text}” (cost ${usd(r.cost_usd)})`;
+  } catch (e) { $("key-msg").textContent = "Failed: " + e.message; }
+  finally { $("test-key").disabled = false; loadStatus(); }
+});
 $("save-budget").addEventListener("click", async () => {
   $("budget-msg").textContent = "";
   try {

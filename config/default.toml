@@ -10,8 +10,8 @@ record_calls = true
 
 [budget]
 # Hard caps in USD. Development phase: small caps. Raise them when the system is READY.
-project_cap_usd = 10.0
-run_cap_usd = 0.50
+project_cap_usd = 5.0
+run_cap_usd = 0.5
 warn_ratio = 0.8
 
 [timing]

@@ -13,22 +13,27 @@ import threading
 import uuid
 from pathlib import Path
 from typing import Any, Literal
+from urllib.parse import urlparse
 
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, ValidationError
 
 from aibecomeshuman.budget import project_spent
-from aibecomeshuman.cli.main import load_dotenv
 from aibecomeshuman.config import ROLES, BudgetSettings, ConfigError, ProjectConfig, load_project
 from aibecomeshuman.core.events import Event, read_events
 from aibecomeshuman.env.scenario import load_scenario
+from aibecomeshuman.envfile import load_dotenv, set_env_value, source_of
+from aibecomeshuman.llm.types import LLMError, LLMRequest, Message
 from aibecomeshuman.play import ScenarioRunner
 from aibecomeshuman.prompts import PromptLibrary, split_front_matter
 from aibecomeshuman.run.session import RunSession
 from aibecomeshuman.tomlpatch import patch_file
 
 STATIC = Path(__file__).parent / "static"
+API_KEY_VAR = "ANTHROPIC_API_KEY"
+# Only requests addressed to this machine are served ("testserver" is the test client).
+LOCAL_HOSTS = {"127.0.0.1", "localhost", "::1", "testserver"}
 
 JobStatus = Literal["running", "ok", "error"]
 
@@ -72,12 +77,45 @@ class BudgetUpdate(BaseModel):
     warn_ratio: float
 
 
+class ApiKeyUpdate(BaseModel):
+    key: str
+
+
+class PingRequest(BaseModel):
+    profile: str = "default"
+    role: str = "decider_fast"
+
+
+def _host_of(value: str) -> str:
+    return (urlparse(f"//{value}").hostname or "").lower()
+
+
 def create_app(root: Path | None = None) -> FastAPI:
     project_root = load_project(root).root
-    load_dotenv(project_root / ".env")
+    env_file = project_root / ".env"
     app = FastAPI(title="aibecomeshuman", docs_url=None, redoc_url=None)
     jobs: dict[str, Job] = {}
     active: dict[str, Job | None] = {"job": None}
+
+    def refresh_env() -> None:
+        # Re-read .env every time, so a key added or changed later works without a restart.
+        load_dotenv(env_file)
+
+    refresh_env()
+
+    @app.middleware("http")
+    async def local_only(request: Request, call_next):
+        # Blocks other websites open in the browser from reaching the panel
+        # (DNS rebinding via Host, cross-site writes via Origin / simple form posts).
+        if _host_of(request.headers.get("host", "")) not in LOCAL_HOSTS:
+            return JSONResponse({"detail": "forbidden host"}, status_code=403)
+        if request.method not in ("GET", "HEAD", "OPTIONS"):
+            origin = request.headers.get("origin")
+            if origin and (urlparse(origin).hostname or "").lower() not in LOCAL_HOSTS:
+                return JSONResponse({"detail": "forbidden origin"}, status_code=403)
+            if not request.headers.get("content-type", "").startswith("application/json"):
+                return JSONResponse({"detail": "JSON body required"}, status_code=415)
+        return await call_next(request)
 
     def project() -> ProjectConfig:
         try:
@@ -112,10 +150,13 @@ def create_app(root: Path | None = None) -> FastAPI:
 
     @app.get("/api/status")
     def status() -> dict[str, Any]:
+        refresh_env()
         p = project()
         current = active["job"]
         return {
-            "api_key_configured": bool(os.environ.get("ANTHROPIC_API_KEY")),
+            "api_key_configured": bool(os.environ.get(API_KEY_VAR)),
+            # 'file' = from .env, 'environment' = set in Windows/shell, None = missing
+            "api_key_source": source_of(API_KEY_VAR),
             "project_spent_usd": project_spent(p.runs_dir),
             "budget": p.app.budget.model_dump(),
             "active_job": current.id if current and current.status == "running" else None,
@@ -221,6 +262,7 @@ def create_app(root: Path | None = None) -> FastAPI:
         current = active["job"]
         if current is not None and current.status == "running":
             raise HTTPException(409, "a run is already in progress")
+        refresh_env()
         p = project()
         try:
             scenario = load_scenario(scenario_path(req.scenario))
@@ -256,7 +298,54 @@ def create_app(root: Path | None = None) -> FastAPI:
             raise HTTPException(404, "job not found")
         return job.snapshot(max(0, after))
 
+    @app.post("/api/ping")
+    def ping(req: PingRequest) -> dict[str, Any]:
+        """One tiny call to check the connection (Haiku: about $0.00002)."""
+        refresh_env()
+        p = project()
+        try:
+            session = RunSession(p, req.profile)
+        except ConfigError as e:
+            raise HTTPException(400, str(e)) from e
+        with session:
+            try:
+                provider = session.llm(req.role)
+            except KeyError as e:
+                raise HTTPException(400, str(e)) from e
+            try:
+                response = provider.complete(
+                    LLMRequest(
+                        purpose="ping",
+                        system="Answer in one short sentence.",
+                        messages=[Message.user("Connection test: say that it works.")],
+                    )
+                )
+            except LLMError as e:
+                session.finish("error", error=str(e))
+                raise HTTPException(502, f"{provider.profile.name}: {e}") from e
+        assert session.manifest is not None
+        return {
+            "model": response.model,
+            "text": response.text,
+            "latency_ms": round(response.latency_ms),
+            "cost_usd": session.manifest.cost_usd,
+        }
+
     # -- settings --------------------------------------------------------------
+
+    @app.put("/api/settings/api-key")
+    def update_api_key(update: ApiKeyUpdate) -> dict[str, Any]:
+        key = update.key.strip()
+        if not key.startswith("sk-ant-") or len(key) < 30 or any(c.isspace() for c in key):
+            raise HTTPException(400, "that does not look like a Claude API key (sk-ant-...)")
+        set_env_value(env_file, API_KEY_VAR, key)
+        refresh_env()
+        overridden = source_of(API_KEY_VAR) == "environment"
+        return {
+            "saved": True,
+            # The key is saved, but a variable set in Windows takes priority over .env.
+            "overridden_by_environment": overridden,
+        }
 
     @app.put("/api/settings/budget")
     def update_budget(update: BudgetUpdate) -> dict[str, Any]:

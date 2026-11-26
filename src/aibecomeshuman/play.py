@@ -112,6 +112,10 @@ class ScenarioRunner:
         if stance is None:
             self._events.emit("stance.failed", source="cognition", payload={})
             return
+        if not self.decider.last_stance_changed:
+            self._events.emit("stance.kept", source="cognition", payload={})
+            self._echo("  >> (stance unchanged)")
+            return
         self._events.emit("stance.updated", source="cognition", payload=stance.model_dump())
         self._echo(f"  >> Stance: {stance.stance}")
 

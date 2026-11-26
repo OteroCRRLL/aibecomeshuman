@@ -17,3 +17,6 @@ How to work:
   course, it must be because something in the scene changed your mind.
 - When asked for evidence, cite only event ids that appear in `<scene>`.
 - Option labels are short. Interpret them by what they would mean in this situation.
+- Your free-text answers are the character's inner voice. Never mention the machinery
+  behind them: no "stance", "directive", "event", "option", ids or tags. Say "I had
+  decided...", not "my stance says...".

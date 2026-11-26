@@ -110,6 +110,62 @@ def test_roles_update_and_rejections(client: TestClient, project_dir: Path) -> N
     assert path.read_text(encoding="utf-8") == before
 
 
+def test_api_key_saved_to_env_file_and_picked_up(
+    client: TestClient, project_dir: Path, monkeypatch
+) -> None:
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    assert client.get("/api/status").json()["api_key_configured"] is False
+
+    bad = client.put("/api/settings/api-key", json={"key": "hello"})
+    assert bad.status_code == 400
+
+    key = "sk-ant-test-" + "x" * 40
+    res = client.put("/api/settings/api-key", json={"key": key})
+    assert res.status_code == 200 and res.json()["overridden_by_environment"] is False
+    assert f"ANTHROPIC_API_KEY={key}" in (project_dir / ".env").read_text(encoding="utf-8")
+
+    status = client.get("/api/status")
+    assert status.json()["api_key_configured"] is True
+    assert status.json()["api_key_source"] == "file"
+    assert key not in status.text  # never echoed back
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+
+
+def test_key_added_after_startup_is_picked_up(
+    client: TestClient, project_dir: Path, monkeypatch
+) -> None:
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    assert client.get("/api/status").json()["api_key_configured"] is False
+    (project_dir / ".env").write_text("ANTHROPIC_API_KEY=sk-ant-later-" + "y" * 30 + "\n")
+    assert client.get("/api/status").json()["api_key_configured"] is True
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+
+
+def test_ping_with_fake_model(client: TestClient) -> None:
+    res = client.post("/api/ping", json={"profile": "offline", "role": "decider_fast"})
+    assert res.status_code == 200, res.text
+    assert res.json()["model"] == "fake-1" and res.json()["cost_usd"] == 0
+    assert client.post("/api/ping", json={"profile": "video-claude"}).status_code == 400
+
+
+def test_local_only_protection(client: TestClient) -> None:
+    assert client.get("/api/status", headers={"host": "evil.example"}).status_code == 403
+    cross_site = client.put(
+        "/api/settings/budget",
+        json={"project_cap_usd": 99, "run_cap_usd": 1, "warn_ratio": 0.8},
+        headers={"origin": "https://evil.example"},
+    )
+    assert cross_site.status_code == 403
+    form_post = client.post(
+        "/api/play",
+        content="scenario=tram-stop.toml",
+        headers={"content-type": "application/x-www-form-urlencoded"},
+    )
+    assert form_post.status_code == 415
+    same_site = client.get("/api/status", headers={"origin": "http://127.0.0.1:8765"})
+    assert same_site.status_code == 200
+
+
 def test_prompts_endpoint(client: TestClient) -> None:
     data = client.get("/api/prompts").json()
     assert {"connor", "kara", "markus"} <= set(data["characters"])

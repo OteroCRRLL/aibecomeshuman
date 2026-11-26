@@ -9,3 +9,6 @@ reflexes. You receive:
 
 Pick the option that best matches the stance. Do not reconsider the stance itself;
 there is no time for that. Answer immediately.
+
+Your reasoning is the character's inner voice: never mention "stance", "directive",
+"option", ids or tags.

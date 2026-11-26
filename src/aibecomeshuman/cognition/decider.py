@@ -68,11 +68,12 @@ class Decision(BaseModel):
 STANCE_SCHEMA: dict[str, Any] = {
     "type": "object",
     "properties": {
+        "changed": {"type": "boolean"},
         "stance": {"type": "string"},
         "approach_keywords": {"type": "array", "items": {"type": "string"}},
         "concerns": {"type": "array", "items": {"type": "string"}},
     },
-    "required": ["stance", "approach_keywords", "concerns"],
+    "required": ["changed", "stance", "approach_keywords", "concerns"],
     "additionalProperties": False,
 }
 
@@ -104,10 +105,16 @@ def fast_decision_schema(choice: Choice) -> dict[str, Any]:
 
 
 STANCE_TASK = (
-    "Update your stance for this scene: how you intend to act from now on and why, in two "
-    "or three sentences. In `approach_keywords`, give 3 to 8 short words, in the same "
-    "language as the on-screen text, describing the kind of option you would pick "
-    "(e.g. calm, help, obey). In `concerns`, list what worries you right now."
+    "Update your stance for this scene. If nothing important has happened since your "
+    "previous stance, set `changed` to false and copy the previous stance as it is. "
+    "Otherwise set `changed` to true and, in `stance`, write what you intend to do next and "
+    "why, as your own intention in this situation (never as a rule you were given), in one "
+    "or two short sentences, at most 40 words. If your directive overrides your "
+    "personality, the stance must describe what you will actually do under it, as a "
+    "concrete intention, not what you would do without it. Do not retell the scene or "
+    "repeat your previous stance. In `approach_keywords`, give 3 to 6 short words, in the "
+    "same language as the on-screen text, describing the kind of option you will pick next "
+    "(e.g. calma, ayudar, obedecer). In `concerns`, list at most three short worries."
 )
 
 DECIDE_TASK = (
@@ -179,6 +186,8 @@ class Decider:
         self._margin = execution_margin_s
         self._system_cache: dict[str, str] = {}
         self.stance: Stance | None = None
+        # Whether the last successful update produced a new stance (False = kept the old one).
+        self.last_stance_changed = False
 
     def set_directive(self, directive: Directive) -> None:
         self.directive = directive
@@ -212,7 +221,10 @@ class Decider:
         except LLMError:
             return None
         assert response.parsed is not None
-        self.stance = Stance.model_validate(response.parsed)
+        changed = bool(response.parsed.get("changed", True)) or self.stance is None
+        if changed:
+            self.stance = Stance.model_validate(response.parsed)
+        self.last_stance_changed = changed
         return self.stance
 
     # -- decisions -------------------------------------------------------------

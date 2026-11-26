@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import sys
 from collections.abc import Sequence
 from pathlib import Path
@@ -24,26 +23,13 @@ from aibecomeshuman.budget import project_spent
 from aibecomeshuman.config import ConfigError, ProjectConfig, load_project
 from aibecomeshuman.core.events import read_events
 from aibecomeshuman.env.scenario import load_scenario
+from aibecomeshuman.envfile import load_dotenv
 from aibecomeshuman.llm.types import LLMError, LLMRequest, Message
 from aibecomeshuman.play import ScenarioRunner
 from aibecomeshuman.run.session import RunSession
 
 PING_SYSTEM = "Answer in one short sentence."
 PING_TEXT = "Connection test. Say which model you are and that the connection works."
-
-
-def load_dotenv(path: Path) -> None:
-    """Load `KEY=VALUE` lines from a .env file. Variables already set are not overridden."""
-    if not path.is_file():
-        return
-    for line in path.read_text(encoding="utf-8").splitlines():
-        line = line.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        key, value = line.split("=", 1)
-        key, value = key.strip(), value.strip().strip("'\"")
-        if key and value and key not in os.environ:
-            os.environ[key] = value
 
 
 def _load(args: argparse.Namespace) -> ProjectConfig:
