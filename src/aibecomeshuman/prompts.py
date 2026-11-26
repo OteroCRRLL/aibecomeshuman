@@ -60,6 +60,25 @@ class PromptLibrary:
     def character(self, name: str) -> str:
         return self._read("characters", f"{name}.md")[1]
 
+    def character_traits(self, name: str) -> dict[str, tuple[float, str]]:
+        """Starting traits from the sheet's front matter: `trait.<name>: <0-10> | meaning`."""
+        meta, _ = self._read("characters", f"{name}.md")
+        traits: dict[str, tuple[float, str]] = {}
+        for key, raw in meta.items():
+            if not key.startswith("trait."):
+                continue
+            value, _, meaning = raw.partition("|")
+            try:
+                number = float(value.strip())
+            except ValueError:
+                raise ConfigError(f"character '{name}': trait '{key}' needs a number") from None
+            if not 0 <= number <= 10:
+                raise ConfigError(f"character '{name}': trait '{key}' must be between 0 and 10")
+            traits[key.removeprefix("trait.")] = (number, meaning.strip())
+        if not traits:
+            raise ConfigError(f"character '{name}': no 'trait.<name>: value' lines in its header")
+        return traits
+
     def directive(self, name: str) -> Directive:
         meta, body = self._read("directives", f"{name}.md")
         priority = meta.get("priority", "flavor")
@@ -79,6 +98,7 @@ class PromptLibrary:
         character: str,
         directive: Directive,
         output_language: str,
+        personality: str | None = None,
     ) -> str:
         priority_note = (
             "This directive OVERRIDES your personality when they conflict."
@@ -89,6 +109,10 @@ class PromptLibrary:
             f"<constitution>\n{self.constitution()}\n</constitution>",
             f"<role>\n{self.role(role)}\n</role>",
             f"<character>\n{self.character(character)}\n</character>",
+        ]
+        if personality:
+            sections.append(personality)
+        sections += [
             f'<directive priority="{escape(directive.priority)}">\n'
             f"{directive.text}\n\n{priority_note}\n</directive>",
             "<output_language>\n"

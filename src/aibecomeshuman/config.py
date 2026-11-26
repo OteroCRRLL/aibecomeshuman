@@ -45,6 +45,8 @@ class _Strict(BaseModel):
 class PathsConfig(_Strict):
     runs_dir: Path = Path("runs")
     prompts_dir: Path = Path("prompts")
+    # One folder per playthrough: memory and personality persist across sessions.
+    campaigns_dir: Path = Path("campaigns")
 
 
 class LLMSettings(_Strict):
@@ -64,11 +66,22 @@ class TimingSettings(_Strict):
     execution_margin_s: float = Field(default=1.0, ge=0)
 
 
+class MemorySettings(_Strict):
+    # Largest change a single reflection can make to one trait (traits go from 0 to 10).
+    max_trait_step: float = Field(default=1.0, gt=0, le=10)
+    # How much memory goes into each decision prompt.
+    recent_scenes: int = Field(default=5, ge=0)
+    important_scenes: int = Field(default=5, ge=0)
+    max_entities: int = Field(default=6, ge=0)
+    max_facts_per_entity: int = Field(default=6, ge=1)
+
+
 class AppConfig(_Strict):
     paths: PathsConfig = Field(default_factory=PathsConfig)
     llm: LLMSettings = Field(default_factory=LLMSettings)
     budget: BudgetSettings = Field(default_factory=BudgetSettings)
     timing: TimingSettings = Field(default_factory=TimingSettings)
+    memory: MemorySettings = Field(default_factory=MemorySettings)
 
 
 class ModelProfile(_Strict):
@@ -134,6 +147,10 @@ class ProjectConfig(BaseModel):
     @property
     def prompts_dir(self) -> Path:
         return self.path(self.app.paths.prompts_dir)
+
+    @property
+    def campaigns_dir(self) -> Path:
+        return self.path(self.app.paths.campaigns_dir)
 
     def run_profile(self, name: str) -> RunProfile:
         try:

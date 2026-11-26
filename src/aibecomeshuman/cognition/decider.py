@@ -119,8 +119,9 @@ STANCE_TASK = (
 
 DECIDE_TASK = (
     "Choose one option. In `reasoning`, explain your choice in character, in two to four "
-    "sentences. In `evidence`, list the event ids (E1, E2...) from the scene that justify "
-    "it. In `confidence`, give a number from 0 to 1."
+    "sentences. In `evidence`, list the ids that justify it: events from this scene "
+    "(E1, E2...) and, if they matter, recollections or promises from your memory "
+    "(M1, C1...). In `confidence`, give a number from 0 to 1."
 )
 
 FAST_TASK = (
@@ -188,17 +189,32 @@ class Decider:
         self.stance: Stance | None = None
         # Whether the last successful update produced a new stance (False = kept the old one).
         self.last_stance_changed = False
+        # Long-term memory, set by the runner: personality goes into the system prompt,
+        # recollections/known entities/promises into the stance and critical decisions.
+        self.personality_text: str | None = None
+        self.memory_text: str = ""
+        self.memory_ids: set[str] = set()
 
     def set_directive(self, directive: Directive) -> None:
         self.directive = directive
         self._system_cache.clear()
 
-    def _system(self, role: str) -> str:
+    def set_memory(self, personality_text: str | None, memory_text: str, ids: set[str]) -> None:
+        if personality_text != self.personality_text:
+            self._system_cache.clear()
+        self.personality_text = personality_text
+        self.memory_text = memory_text
+        self.memory_ids = set(ids)
+
+    def system(self, role: str) -> str:
         if role not in self._system_cache:
             self._system_cache[role] = self._prompts.system_prompt(
-                role, self.character, self.directive, self.output_language
+                role, self.character, self.directive, self.output_language, self.personality_text
             )
         return self._system_cache[role]
+
+    def _with_memory(self, parts: list[str]) -> str:
+        return "\n\n".join([self.memory_text, *parts] if self.memory_text else parts)
 
     # -- stance ----------------------------------------------------------------
 
@@ -206,10 +222,10 @@ class Decider:
         """Ask the strong model for a new stance. On failure, keep the previous one."""
         request = LLMRequest(
             purpose="stance.update",
-            system=self._system("decider"),
+            system=self.system("decider"),
             messages=[
                 Message.user(
-                    "\n\n".join(
+                    self._with_memory(
                         [ctx.render(), render_stance(self.stance), f"<task>{STANCE_TASK}</task>"]
                     )
                 )
@@ -237,10 +253,10 @@ class Decider:
     def _decide_critical(self, choice: Choice, ctx: SceneContext) -> Decision:
         request = LLMRequest(
             purpose="decide.critical",
-            system=self._system("decider"),
+            system=self.system("decider"),
             messages=[
                 Message.user(
-                    "\n\n".join(
+                    self._with_memory(
                         [
                             ctx.render(),
                             render_stance(self.stance),
@@ -258,7 +274,7 @@ class Decider:
             return self._fallback(choice, error=str(e))
         parsed = response.parsed or {}
         evidence = [str(x) for x in parsed.get("evidence", [])]
-        valid = ctx.ids
+        valid = ctx.ids | self.memory_ids
         confidence = parsed.get("confidence")
         return Decision(
             choice_id=choice.id,
@@ -278,7 +294,7 @@ class Decider:
         deadline_ms = max(0.0, choice.seconds - self._margin) * 1000
         request = LLMRequest(
             purpose="decide.timed",
-            system=self._system("decider_fast"),
+            system=self.system("decider_fast"),
             messages=[
                 Message.user(
                     "\n\n".join(

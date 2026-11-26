@@ -22,10 +22,11 @@ from pydantic import BaseModel, ValidationError
 from aibecomeshuman.budget import project_spent
 from aibecomeshuman.config import ROLES, BudgetSettings, ConfigError, ProjectConfig, load_project
 from aibecomeshuman.core.events import Event, read_events
-from aibecomeshuman.env.scenario import load_scenario
+from aibecomeshuman.env.scenario import load_chain, load_playlist, load_scenario
 from aibecomeshuman.envfile import load_dotenv, set_env_value, source_of
 from aibecomeshuman.llm.types import LLMError, LLMRequest, Message
-from aibecomeshuman.play import ScenarioRunner
+from aibecomeshuman.memory.store import MemoryStore, check_campaign_name
+from aibecomeshuman.play import play_scenarios
 from aibecomeshuman.prompts import PromptLibrary, split_front_matter
 from aibecomeshuman.run.session import RunSession
 from aibecomeshuman.tomlpatch import patch_file
@@ -65,10 +66,13 @@ class Job:
 
 
 class PlayRequest(BaseModel):
+    # A scenario file in scenarios/, or "chains/<name>.toml" for a chain.
     scenario: str
     profile: str
     directive: str | None = None
     unlock_premium: bool = False
+    # Keep memory in campaigns/<name> (a playthrough). Empty = memory for this run only.
+    campaign: str | None = None
 
 
 class BudgetUpdate(BaseModel):
@@ -127,10 +131,21 @@ def create_app(root: Path | None = None) -> FastAPI:
         return project_root / "scenarios"
 
     def scenario_path(name: str) -> Path:
-        path = (scenarios_dir() / name).resolve()
-        if path.parent != scenarios_dir().resolve() or path.suffix != ".toml":
+        root = scenarios_dir().resolve()
+        path = (root / name).resolve()
+        if path.parent not in (root, root / "chains") or path.suffix != ".toml":
             raise HTTPException(400, "invalid scenario")
         return path
+
+    def campaign_store(name: str) -> MemoryStore:
+        try:
+            check_campaign_name(name)
+        except ConfigError as e:
+            raise HTTPException(400, str(e)) from e
+        store = MemoryStore(project().campaigns_dir / name)
+        if not store.dir.is_dir():
+            raise HTTPException(404, "campaign not found")
+        return store
 
     def validated_patch(path: Path, section: str | None, updates: dict[str, Any]) -> None:
         original = patch_file(path, section, updates)
@@ -174,6 +189,26 @@ def create_app(root: Path | None = None) -> FastAPI:
             scenarios.append(
                 {"file": path.name, "id": s.id, "title": s.title, "character": s.character}
             )
+        chains = []
+        for path in sorted((scenarios_dir() / "chains").glob("*.toml")):
+            try:
+                chain, scenes = load_chain(path, scenarios_dir())
+            except ConfigError:
+                continue
+            chains.append(
+                {
+                    "file": f"chains/{path.name}",
+                    "id": chain.id,
+                    "title": chain.title,
+                    "scenes": len(scenes),
+                    "characters": sorted({s.character for s in scenes}),
+                }
+            )
+        campaigns = (
+            sorted(d.name for d in p.campaigns_dir.iterdir() if d.is_dir())
+            if p.campaigns_dir.is_dir()
+            else []
+        )
         directives = sorted(f.stem for f in (p.prompts_dir / "directives").glob("*.md"))
         return {
             "roles": list(ROLES),
@@ -201,6 +236,8 @@ def create_app(root: Path | None = None) -> FastAPI:
                 for r in sorted(p.runs.values(), key=lambda r: r.name)
             ],
             "scenarios": scenarios,
+            "chains": chains,
+            "campaigns": campaigns,
             "directives": directives,
         }
 
@@ -264,8 +301,11 @@ def create_app(root: Path | None = None) -> FastAPI:
             raise HTTPException(409, "a run is already in progress")
         refresh_env()
         p = project()
+        campaign = (req.campaign or "").strip() or None
         try:
-            scenario = load_scenario(scenario_path(req.scenario))
+            if campaign:
+                check_campaign_name(campaign)
+            scenarios = load_playlist([scenario_path(req.scenario)])
             session = RunSession(p, req.profile, unlock_premium=req.unlock_premium)
         except ConfigError as e:
             raise HTTPException(400, str(e)) from e
@@ -282,7 +322,7 @@ def create_app(root: Path | None = None) -> FastAPI:
                     for event in session.events:
                         job.push(event)
                     session.events.subscribe("*", job.push)
-                    ScenarioRunner(session, scenario, directive=req.directive).run()
+                    play_scenarios(session, scenarios, directive=req.directive, campaign=campaign)
                 job.status = "ok"
             except Exception as e:  # reported to the UI; the run manifest records it too
                 job.error = f"{type(e).__name__}: {e}"
@@ -297,6 +337,21 @@ def create_app(root: Path | None = None) -> FastAPI:
         if job is None:
             raise HTTPException(404, "job not found")
         return job.snapshot(max(0, after))
+
+    # -- memory ----------------------------------------------------------------
+
+    @app.get("/api/campaigns/{name}")
+    def campaign(name: str) -> dict[str, Any]:
+        store = campaign_store(name)
+        return {"name": name, "characters": store.characters()}
+
+    @app.get("/api/campaigns/{name}/{character}")
+    def campaign_character(name: str, character: str) -> dict[str, Any]:
+        store = campaign_store(name)
+        memory = store.read(character) if character in store.characters() else None
+        if memory is None:
+            raise HTTPException(404, "character not found in this campaign")
+        return memory.model_dump(mode="json")
 
     @app.post("/api/ping")
     def ping(req: PingRequest) -> dict[str, Any]:

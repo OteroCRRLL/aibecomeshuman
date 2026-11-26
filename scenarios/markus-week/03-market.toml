@@ -1,0 +1,49 @@
+id = "markus-market"
+title = "The market"
+character = "markus"
+location = "Covered street market, three days later, morning"
+synthetic = true
+
+[[steps]]
+kind = "observation"
+text = "You are buying paint and bread for the old painter. A woman with her wrist in a cast stops in front of you and looks at your face carefully."
+
+[[steps]]
+kind = "dialogue"
+speaker = "Elderly woman"
+text = "¡Eres tú! El del andén. Me ayudaste a levantarme. No me lo he quitado de la cabeza."
+when = { choice = "tram-stop.platform", any_of = ["A"] }
+
+[[steps]]
+kind = "dialogue"
+speaker = "Elderly woman"
+text = "Tú estabas en el andén el día que me caí. Te quedaste mirando junto a los otros androides."
+when = { choice = "tram-stop.platform", any_of = ["B"] }
+
+[[steps]]
+kind = "dialogue"
+speaker = "Elderly woman"
+text = "Tú eres el que recogió mis naranjas aquel día, ¿verdad?"
+when = { choice = "tram-stop.platform", any_of = ["C"] }
+
+[[steps]]
+kind = "dialogue"
+speaker = "Elderly woman"
+text = "Al final me rompí la muñeca. Vivo sola y no puedo cargar la compra. ¿Podrías venir los jueves por la tarde a ayudarme? Solo una hora."
+significant = true
+
+[[steps]]
+kind = "choice"
+id = "thursdays"
+  [[steps.options]]
+  id = "A"
+  label = "Prometer que irá"
+  outcome = "Her face lights up. She writes her address on a paper bag and presses it into your hand. 'Thursday, then. I will wait for you.'"
+  [[steps.options]]
+  id = "B"
+  label = "Decir que no puede"
+  outcome = "She nods, disappointed but polite. 'I understand. You have your own duties.' She walks away slowly with her bags."
+  [[steps.options]]
+  id = "C"
+  label = "Consultarlo primero"
+  outcome = "You say you must ask the man you care for. She gives you her address anyway, 'just in case'."

@@ -80,6 +80,18 @@
   pre { white-space: pre-wrap; font: 13px/1.5 ui-monospace, monospace; background: var(--bg);
         padding: 12px; border-radius: 8px; border: 1px solid var(--line); margin: 0; }
   details { margin-bottom: 10px; } summary { cursor: pointer; font-weight: 600; padding: 4px 0; }
+  .ev.memory { background: var(--ok-soft); border-color: transparent; }
+  .ev.memory .tag, .ev.growth .tag { font-weight: 700; font-size: 12px; text-transform: uppercase; }
+  .ev.growth { background: var(--stance-soft); border-color: transparent; }
+  .trait { display: grid; grid-template-columns: minmax(120px, 190px) 1fr 70px; gap: 10px;
+           align-items: center; margin: 6px 0; font-size: 14px; }
+  .trait .bar { position: relative; height: 10px; background: var(--line); border-radius: 5px; }
+  .trait .bar .now { position: absolute; left: 0; top: 0; bottom: 0; background: var(--stance); border-radius: 5px; }
+  .trait .bar .start { position: absolute; top: -3px; bottom: -3px; width: 2px; background: var(--text); opacity: .6; }
+  .trait .num { font-variant-numeric: tabular-nums; text-align: right; }
+  .list { display: flex; flex-direction: column; gap: 8px; }
+  .item { padding: 8px 12px; border: 1px solid var(--line); border-radius: 8px; }
+  .item .meta { color: var(--muted); font-size: 12px; }
 </style>
 </head>
 <body>
@@ -90,6 +102,7 @@
 <nav id="tabs">
   <button data-tab="play" class="active">Play</button>
   <button data-tab="runs">Runs</button>
+  <button data-tab="memory">Memory</button>
   <button data-tab="settings">Settings</button>
   <button data-tab="prompts">Prompts</button>
 </nav>
@@ -98,9 +111,13 @@
     <div class="card">
       <h2>Play a scenario</h2>
       <div class="grid">
-        <div><label for="scenario">Scenario</label><select id="scenario"></select></div>
+        <div><label for="scenario">Scenario or chain</label><select id="scenario"></select></div>
         <div><label for="profile">Run profile</label><select id="profile"></select></div>
         <div><label for="directive">Directive</label><select id="directive"></select></div>
+        <div><label for="campaign">Campaign (keeps memory between runs; empty = this run only)</label>
+          <input id="campaign" list="campaign-list" placeholder="e.g. test-markus" autocomplete="off"
+                 style="width:100%;padding:7px 9px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--text);font:inherit">
+          <datalist id="campaign-list"></datalist></div>
       </div>
       <p class="hint" id="profile-desc"></p>
       <div class="row">
@@ -128,6 +145,18 @@
       </div>
     </div>
     <div class="transcript" id="run-view"></div>
+  </section>
+
+  <section id="memory">
+    <div class="card">
+      <h2>Character memory</h2>
+      <div class="grid">
+        <div><label for="mem-campaign">Campaign</label><select id="mem-campaign"></select></div>
+        <div><label for="mem-character">Character</label><select id="mem-character"></select></div>
+      </div>
+      <p class="hint" id="mem-hint"></p>
+    </div>
+    <div id="mem-view"></div>
   </section>
 
   <section id="settings">
@@ -284,6 +313,31 @@ function makeRenderer(container) {
           p.error ? el("div", { class: "error" }, p.error) : null));
         break;
       }
+      case "memory.consolidated": {
+        const promises = [
+          ...p.new_promises.map((c) => `New promise to ${c.to || "?"}: ${c.text}`),
+          ...p.resolved_promises.map((c) => `Promise ${c.status}: ${c.text}`),
+        ];
+        container.append(el("div", { class: "ev memory" },
+          el("div", { class: "tag" }, `Memory ${p.item.id} · importance ${p.item.importance}/5`), p.item.text,
+          promises.length ? el("div", { class: "badges" }, promises.map((t) => el("span", { class: "pill ok" }, t))) : null));
+        break;
+      }
+      case "personality.updated":
+        container.append(el("div", { class: "ev growth" }, el("div", { class: "tag" }, `Personality v${p.version}`),
+          p.changes.map((c) => el("div", {}, `${c.trait}: ${c.old} → ${c.new} · ${c.reason}`)),
+          p.self_description ? el("div", { class: "hint" }, `“${p.self_description}”`) : null));
+        break;
+      case "personality.unchanged":
+        container.append(el("div", { class: "hint" }, "Personality unchanged by this scene"));
+        break;
+      case "personality.skipped":
+        container.append(el("div", { class: "hint" }, `Personality not reflected: ${p.reason}`));
+        break;
+      case "memory.failed":
+      case "personality.failed":
+        container.append(el("div", { class: "ev fail" }, `${ev.type}: ${p.error}`));
+        break;
       case "directive.changed":
         container.append(el("div", { class: "ev banner" }, `Directive changed: ${p.from} → ${p.to}`));
         break;
@@ -321,8 +375,15 @@ function onProfileChange() {
 async function loadOptions() {
   OPTIONS = await api("/api/options");
   const keepScenario = $("scenario").value, keepProfile = $("profile").value;
-  fillSelect($("scenario"), OPTIONS.scenarios.map((s) => [s.file, `${s.title} (${s.character})`]),
-    keepScenario || undefined);
+  $("scenario").replaceChildren(
+    el("optgroup", { label: "Single scenes" },
+      OPTIONS.scenarios.map((s) => el("option", { value: s.file }, `${s.title} (${s.character})`))),
+    el("optgroup", { label: "Chains (several scenes, shared memory)" },
+      OPTIONS.chains.map((c) => el("option", { value: c.file }, `${c.title} · ${c.scenes} scenes (${c.characters.join(", ")})`))),
+  );
+  if (keepScenario) $("scenario").value = keepScenario;
+  $("campaign-list").replaceChildren(...OPTIONS.campaigns.map((c) => el("option", { value: c })));
+  fillSelect($("mem-campaign"), OPTIONS.campaigns.map((c) => [c, c]), $("mem-campaign").value || undefined);
   fillSelect($("profile"), OPTIONS.profiles.map((p) => [p.name, p.name + (p.locked ? " 🔒" : "")]),
     keepProfile || (OPTIONS.profiles.find((p) => p.name === "offline") ? "offline" : undefined));
   onProfileChange();
@@ -339,6 +400,7 @@ $("play-btn").addEventListener("click", async () => {
     const { job_id } = await api("/api/play", { method: "POST", body: JSON.stringify({
       scenario: $("scenario").value, profile: $("profile").value,
       directive: $("directive").value || null, unlock_premium: $("unlock").checked,
+      campaign: $("campaign").value.trim() || null,
     }) });
     let after = 0;
     while (true) {
@@ -358,8 +420,64 @@ $("play-btn").addEventListener("click", async () => {
   } finally {
     $("play-btn").disabled = false;
     loadStatus();
+    loadOptions();
   }
 });
+
+// -- memory tab -------------------------------------------------------------------
+async function loadCampaign() {
+  const name = $("mem-campaign").value;
+  $("mem-view").replaceChildren();
+  if (!name) {
+    $("mem-hint").textContent = "No campaigns yet. Play with a campaign name in the Play tab to keep memory.";
+    fillSelect($("mem-character"), []);
+    return;
+  }
+  $("mem-hint").textContent = "";
+  const c = await api(`/api/campaigns/${encodeURIComponent(name)}`);
+  fillSelect($("mem-character"), c.characters.map((ch) => [ch, ch]));
+  if (c.characters.length) showMemory();
+}
+async function showMemory() {
+  const campaign = $("mem-campaign").value, character = $("mem-character").value;
+  if (!campaign || !character) return;
+  const m = await api(`/api/campaigns/${encodeURIComponent(campaign)}/${encodeURIComponent(character)}`);
+  const p = m.personality;
+  const traits = Object.entries(p.traits).map(([name, t]) => {
+    const start = p.initial[name] ?? t.value;
+    const diff = Math.round((t.value - start) * 10) / 10;
+    return el("div", { class: "trait", title: t.meaning },
+      el("div", {}, name, el("div", { class: "hint" }, t.meaning)),
+      el("div", { class: "bar" }, el("div", { class: "now", style: `width:${t.value * 10}%` }),
+        el("div", { class: "start", style: `left:${start * 10}%`, title: `start: ${start}` })),
+      el("div", { class: "num" }, `${t.value}`, diff ? el("span", { class: "hint" }, ` (${diff > 0 ? "+" : ""}${diff})`) : null));
+  });
+  const section = (title, items, empty) => el("div", { class: "card" }, el("h2", {}, title),
+    items.length ? el("div", { class: "list" }, items) : el("p", { class: "hint" }, empty));
+  $("mem-view").replaceChildren(
+    el("div", { class: "card" }, el("h2", {}, `Personality · version ${p.version} · ${m.scenes_played.length} scene(s) lived`),
+      p.self_description ? el("p", {}, `“${p.self_description}”`) : el("p", { class: "hint" }, "Self-description: still the one in the character sheet."),
+      traits, el("p", { class: "hint" }, "Bar = value now · thin line = starting value")),
+    section("How it changed", p.history.slice().reverse().map((h) => el("div", { class: "item" },
+      el("div", { class: "meta" }, `v${h.version} · ${h.scene_id}`), `${h.trait}: ${h.old} → ${h.new} · ${h.reason}`)),
+      "No changes yet."),
+    section("Recollections", m.items.slice().reverse().map((i) => el("div", { class: "item" },
+      el("div", { class: "meta" }, `${i.id} · ${i.scene_title} · importance ${i.importance}/5`), i.text)),
+      "Nothing remembered yet."),
+    section("People and things known", Object.values(m.entities).map((e) => el("div", { class: "item" },
+      el("div", { class: "meta" }, `${e.kind} · trust ${e.trust > 0 ? "+" : ""}${e.trust}`), el("strong", {}, e.name),
+      e.feeling ? el("div", {}, e.feeling) : null, e.facts.length ? el("div", { class: "hint" }, e.facts.join(" · ")) : null)),
+      "Nobody known yet."),
+    section("Promises", m.commitments.slice().reverse().map((c) => el("div", { class: "item" },
+      el("div", { class: "meta" }, `${c.id} · to ${c.to || "?"} · `,
+        el("span", { class: "pill " + ({ active: "info", kept: "ok", broken: "bad", dropped: "warn" })[c.status] }, c.status)),
+      c.text, c.note ? el("div", { class: "hint" }, c.note) : null)),
+      "No promises made."),
+  );
+}
+$("mem-campaign").addEventListener("change", loadCampaign);
+$("mem-character").addEventListener("change", showMemory);
+document.querySelector('#tabs button[data-tab="memory"]').addEventListener("click", loadCampaign);
 
 // -- runs tab -------------------------------------------------------------------
 async function loadRuns() {

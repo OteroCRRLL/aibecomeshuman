@@ -1,0 +1,9 @@
+# A chain is played in one run with shared memory. Paths are relative to scenarios/.
+id = "markus-week"
+title = "A week with Markus"
+scenarios = [
+  "tram-stop.toml",
+  "markus-week/02-evening.toml",
+  "markus-week/03-market.toml",
+  "markus-week/04-thursday.toml",
+]

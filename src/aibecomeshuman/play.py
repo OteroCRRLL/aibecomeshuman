@@ -1,7 +1,9 @@
-"""Scenario runner: plays a scenario through the decider inside a run session.
+"""Scenario runner: plays scenes through the decider inside a run session, with memory.
 
-Every step becomes an event in the run's log, so the same run can later feed memory,
-the overlay and the editing markers.
+Every step becomes an event in the run's log, so the same run can later feed the overlay
+and the editing markers. At the end of each scene the character's memory is consolidated
+and its personality reflected on; both are saved to the campaign (or to the run folder
+when no campaign is given).
 """
 
 from __future__ import annotations
@@ -10,12 +12,54 @@ from collections.abc import Callable
 
 from aibecomeshuman.cognition.context import SceneContext
 from aibecomeshuman.cognition.decider import Decider, Decision
+from aibecomeshuman.cognition.reflection import SceneReport, consolidate, reflect
 from aibecomeshuman.config import ConfigError
-from aibecomeshuman.env.scenario import ChoiceStep, DialogueStep, ObservationStep, Scenario
+from aibecomeshuman.core.events import EventLog
+from aibecomeshuman.env.scenario import (
+    ChoiceStep,
+    Condition,
+    DialogueStep,
+    ObservationStep,
+    Scenario,
+)
+from aibecomeshuman.llm.types import LLMError
+from aibecomeshuman.memory.models import CharacterMemory, Personality, Trait
+from aibecomeshuman.memory.render import render_memory, render_personality
+from aibecomeshuman.memory.store import CampaignState, MemoryStore, check_campaign_name
 from aibecomeshuman.prompts import Directive, PromptLibrary
 from aibecomeshuman.run.session import RunSession
 
 Echo = Callable[[str], None]
+
+
+class Campaign:
+    """Memory and choices for one playthrough, shared by every scene of a run."""
+
+    def __init__(self, session: RunSession, name: str | None = None) -> None:
+        self.name = check_campaign_name(name) if name else None
+        project = session.project
+        assert session.dir is not None
+        directory = project.campaigns_dir / self.name if self.name else session.dir / "memory"
+        self.store = MemoryStore(directory)
+        self.prompts = PromptLibrary(project.prompts_dir)
+        self.state: CampaignState = self.store.load_state()
+        self._memories: dict[str, CharacterMemory] = {}
+
+    def memory_for(self, character: str) -> CharacterMemory:
+        if character not in self._memories:
+
+            def initial() -> Personality:
+                traits = self.prompts.character_traits(character)
+                return Personality.from_traits(
+                    {k: Trait(value=v, meaning=m) for k, (v, m) in traits.items()}
+                )
+
+            self._memories[character] = self.store.load(character, initial)
+        return self._memories[character]
+
+    def save(self, character: str) -> None:
+        self.store.save(self.memory_for(character))
+        self.store.save_state(self.state)
 
 
 class ScenarioRunner:
@@ -25,6 +69,7 @@ class ScenarioRunner:
         scenario: Scenario,
         directive: str | None = None,
         echo: Echo | None = None,
+        campaign: Campaign | None = None,
     ) -> None:
         self.session = session
         self.scenario = scenario
@@ -37,6 +82,8 @@ class ScenarioRunner:
             )
         self.prompts = PromptLibrary(session.project.prompts_dir)
         self.directive: Directive = self.prompts.directive(directive or profile.directive)
+        self.campaign = campaign or Campaign(session)
+        self.memory = self.campaign.memory_for(scenario.character)
         self.ctx = SceneContext(scenario.id, scenario.location)
         self.decider = Decider(
             prompts=self.prompts,
@@ -47,11 +94,16 @@ class ScenarioRunner:
             fast=session.llm("decider_fast") if session.has_role("decider_fast") else None,
             execution_margin_s=session.project.app.timing.execution_margin_s,
         )
+        self._decisions: list[tuple[Decision, str]] = []
 
     @property
-    def _events(self):
+    def _events(self) -> EventLog:
         assert self.session.events is not None
         return self.session.events
+
+    @property
+    def _memory_settings(self):
+        return self.session.project.app.memory
 
     def change_directive(self, name: str) -> None:
         """Swap the run directive mid-scene (operator action)."""
@@ -75,12 +127,18 @@ class ScenarioRunner:
                 "location": s.location,
                 "directive": self.directive.name,
                 "synthetic": s.synthetic,
+                "campaign": self.campaign.name,
+                "memories": len(self.memory.items),
+                "personality_version": self.memory.personality.version,
             },
         )
         self._echo(f"== {s.title} ({s.character}) · directive: {self.directive.name} ==")
+        if self.memory.items:
+            self._echo(f"   (remembers {len(self.memory.items)} earlier scene(s))")
 
-        decisions: list[Decision] = []
         for step in s.steps:
+            if step.when is not None and not self._condition_met(step.when):
+                continue
             if isinstance(step, ObservationStep):
                 entry = self.ctx.add("observation", step.text)
                 self._perceived(entry.id, "observation", step.text)
@@ -94,12 +152,110 @@ class ScenarioRunner:
                 if step.significant:
                     self._update_stance()
             elif isinstance(step, ChoiceStep):
-                decisions.append(self._play_choice(step))
+                self._play_choice(step)
 
         self._events.emit("scene.finished", source="env", payload={"scenario": s.id})
-        return decisions
+        self._end_of_scene()
+        return [d for d, _ in self._decisions]
 
-    # -- internals -------------------------------------------------------------
+    # -- memory ----------------------------------------------------------------
+
+    def _condition_met(self, condition: Condition) -> bool:
+        key = self.scenario.qualify(condition.choice)
+        chosen = self.campaign.state.choices.get(key)
+        if chosen is None:
+            self._events.emit(
+                "scene.condition_unknown", source="env", payload={"choice": key}
+            )
+            return False
+        return chosen in condition.any_of
+
+    def _refresh_memory(self) -> None:
+        self.decider.set_memory(
+            render_personality(self.memory),
+            render_memory(self.memory, self.ctx.render(), self._memory_settings),
+            self.memory.ids,
+        )
+
+    def _end_of_scene(self) -> None:
+        character = self.scenario.character
+        report: SceneReport | None = None
+        if self.session.has_role("summarizer"):
+            try:
+                report = consolidate(
+                    self.session.llm("summarizer"),
+                    self.decider.system("summarizer"),
+                    self.memory,
+                    self.ctx,
+                    self.scenario.title,
+                    self._memory_settings,
+                    self.session.dir.name if self.session.dir else None,
+                )
+            except LLMError as e:
+                self._events.emit("memory.failed", source="memory", payload={"error": str(e)})
+                self._echo(f"  ## Memory not saved: {e}")
+        if report is not None:
+            self._events.emit(
+                "memory.consolidated",
+                source="memory",
+                payload={
+                    "character": character,
+                    "item": report.item.model_dump(),
+                    "new_promises": [c.model_dump() for c in report.new_commitments],
+                    "resolved_promises": [c.model_dump() for c in report.resolved_commitments],
+                    "entities": report.entities_touched,
+                },
+            )
+            self._echo(f"  ## Memory {report.item.id} ({report.item.importance}/5): "
+                       f"{report.item.text}")
+            for c in report.new_commitments:
+                self._echo(f"  ## New promise {c.id} to {c.to or '?'}: {c.text}")
+            for c in report.resolved_commitments:
+                self._echo(f"  ## Promise {c.id} {c.status}: {c.note}")
+            self._reflect(report)
+        self.campaign.save(character)
+
+    def _reflect(self, report: SceneReport) -> None:
+        if not self.directive.shapes_personality:
+            self._events.emit(
+                "personality.skipped",
+                source="memory",
+                payload={"reason": f"directive '{self.directive.name}' does not shape personality"},
+            )
+            self._echo("  ## Personality unchanged: this directive's choices were imposed")
+            return
+        if not self.session.has_role("reflector"):
+            return
+        try:
+            changes = reflect(
+                self.session.llm("reflector"),
+                self.decider.system("reflector"),
+                self.memory,
+                report,
+                self._decisions,
+                self._memory_settings,
+            )
+        except LLMError as e:
+            self._events.emit("personality.failed", source="memory", payload={"error": str(e)})
+            return
+        p = self.memory.personality
+        self._events.emit(
+            "personality.updated" if changes else "personality.unchanged",
+            source="memory",
+            payload={
+                "character": self.scenario.character,
+                "version": p.version,
+                "changes": [c.model_dump() for c in changes],
+                "traits": {k: t.value for k, t in p.traits.items()},
+                "self_description": p.self_description,
+            },
+        )
+        for c in changes:
+            self._echo(f"  ## {c.trait}: {c.old:g} -> {c.new:g} · {c.reason}")
+        if not changes:
+            self._echo("  ## Personality unchanged")
+
+    # -- steps -----------------------------------------------------------------
 
     def _perceived(self, entry_id: str, kind: str, text: str, speaker: str | None = None) -> None:
         payload = {"entry_id": entry_id, "kind": kind, "text": text}
@@ -108,6 +264,7 @@ class ScenarioRunner:
         self._events.emit("scene.perceived", source="env", payload=payload)
 
     def _update_stance(self) -> None:
+        self._refresh_memory()
         stance = self.decider.update_stance(self.ctx)
         if stance is None:
             self._events.emit("stance.failed", source="cognition", payload={})
@@ -119,7 +276,7 @@ class ScenarioRunner:
         self._events.emit("stance.updated", source="cognition", payload=stance.model_dump())
         self._echo(f"  >> Stance: {stance.stance}")
 
-    def _play_choice(self, step: ChoiceStep) -> Decision:
+    def _play_choice(self, step: ChoiceStep) -> None:
         choice = step.to_choice()
         # A timed choice needs a stance to lean on; build one off the clock if missing.
         if choice.timed and self.decider.stance is None:
@@ -130,8 +287,11 @@ class ScenarioRunner:
         labels = "  ".join(f"{o.id}) {o.label}" for o in choice.options)
         self._echo(f"  ?? Choice{timer}: {labels}")
 
+        self._refresh_memory()
         decision = self.decider.decide(choice, self.ctx)
         label = next(o.label for o in choice.options if o.id == decision.option_id)
+        self._decisions.append((decision, label))
+        self.campaign.state.choices[self.scenario.qualify(step.id)] = decision.option_id
         self._events.emit(
             "decision.made",
             source="cognition",
@@ -147,7 +307,22 @@ class ScenarioRunner:
         self._perceived(entry.id, "outcome", outcome)
         self._echo(f"  [{entry.id}] {outcome}")
         self._update_stance()
-        return decision
+
+
+def play_scenarios(
+    session: RunSession,
+    scenarios: list[Scenario],
+    directive: str | None = None,
+    echo: Echo | None = None,
+    campaign: str | None = None,
+) -> list[Decision]:
+    """Play scenes in order in one run; memory carries over from one to the next."""
+    shared = Campaign(session, campaign)
+    decisions: list[Decision] = []
+    for scenario in scenarios:
+        runner = ScenarioRunner(session, scenario, directive=directive, echo=echo, campaign=shared)
+        decisions += runner.run()
+    return decisions
 
 
 def _describe(decision: Decision) -> str:

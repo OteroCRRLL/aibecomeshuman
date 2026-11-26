@@ -126,6 +126,19 @@ def test_critical_decision_with_valid_evidence() -> None:
     assert "<character>" in sent.system and "Markus" in sent.system
 
 
+def test_memory_ids_count_as_evidence_and_memory_reaches_prompt() -> None:
+    strong = scripted(
+        {"option_id": "A", "reasoning": "", "evidence": ["E1", "M2", "C1"], "confidence": 1}
+    )
+    d = decider(strong)
+    d.set_memory("<personality>P</personality>", "<memory>RECUERDO</memory>", {"M2", "C1"})
+    decision = d.decide(CHOICE, ctx())
+    assert decision.evidence_ok is True
+    sent = strong.calls[0]
+    assert "<personality>P</personality>" in sent.system
+    assert sent.messages[0].content[0].text.startswith("<memory>RECUERDO</memory>")
+
+
 def test_invented_evidence_is_flagged() -> None:
     strong = scripted({"option_id": "B", "reasoning": "", "evidence": ["E9"], "confidence": 0.5})
     assert decider(strong).decide(CHOICE, ctx()).evidence_ok is False

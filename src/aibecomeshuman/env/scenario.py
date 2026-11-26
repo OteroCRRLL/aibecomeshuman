@@ -21,11 +21,22 @@ class _Strict(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class Condition(_Strict):
+    """Play a step only if an earlier choice went a certain way.
+
+    `choice` is "<scenario id>.<choice id>", or just "<choice id>" for the same scenario.
+    """
+
+    choice: str
+    any_of: list[str] = Field(min_length=1)
+
+
 class ObservationStep(_Strict):
     kind: Literal["observation"]
     text: str
     # Important moments trigger a stance update before play continues.
     significant: bool = False
+    when: Condition | None = None
 
 
 class DialogueStep(_Strict):
@@ -33,6 +44,7 @@ class DialogueStep(_Strict):
     speaker: str
     text: str
     significant: bool = False
+    when: Condition | None = None
 
 
 class ScenarioOption(_Strict):
@@ -49,6 +61,7 @@ class ChoiceStep(_Strict):
     timed: bool = False
     seconds: float | None = Field(default=None, gt=0)
     options: list[ScenarioOption] = Field(min_length=2)
+    when: Condition | None = None
 
     @model_validator(mode="after")
     def _check(self) -> ChoiceStep:
@@ -95,15 +108,71 @@ class Scenario(_Strict):
         return self
 
 
-def load_scenario(path: Path) -> Scenario:
+    def qualify(self, choice: str) -> str:
+        return choice if "." in choice else f"{self.id}.{choice}"
+
+
+class Chain(_Strict):
+    """Scenes played one after another in the same run, sharing memory."""
+
+    id: str
+    title: str
+    # Paths relative to the scenarios/ folder, in play order.
+    scenarios: list[str] = Field(min_length=1)
+
+
+def _read_toml(path: Path, what: str) -> dict:
     try:
         with path.open("rb") as f:
-            data = tomllib.load(f)
+            return tomllib.load(f)
     except FileNotFoundError:
-        raise ConfigError(f"scenario not found: {path}") from None
+        raise ConfigError(f"{what} not found: {path}") from None
     except tomllib.TOMLDecodeError as e:
         raise ConfigError(f"{path}: invalid TOML: {e}") from e
+
+
+def load_scenario(path: Path) -> Scenario:
+    data = _read_toml(path, "scenario")
     try:
         return Scenario.model_validate(data)
     except ValidationError as e:
         raise ConfigError(f"{path}:\n{e}") from e
+
+
+def chain_root(chain_path: Path) -> Path:
+    """The scenarios/ folder a chain's paths are relative to (chains live in scenarios/chains/)."""
+    folder = chain_path.resolve().parent
+    return folder.parent if folder.name == "chains" else folder
+
+
+def load_playlist(paths: list[Path]) -> list[Scenario]:
+    """Scenes to play from a mix of scenario files and chain files, in order."""
+    scenarios: list[Scenario] = []
+    for path in paths:
+        if "scenarios" in _read_toml(path, "scenario or chain"):
+            scenarios += load_chain(path, chain_root(path))[1]
+        else:
+            scenarios.append(load_scenario(path))
+    ids = [s.id for s in scenarios]
+    if len(ids) != len(set(ids)):
+        raise ConfigError("the same scenario cannot be played twice in one run")
+    return scenarios
+
+
+def load_chain(path: Path, scenarios_root: Path) -> tuple[Chain, list[Scenario]]:
+    data = _read_toml(path, "chain")
+    try:
+        chain = Chain.model_validate(data)
+    except ValidationError as e:
+        raise ConfigError(f"{path}:\n{e}") from e
+    root = scenarios_root.resolve()
+    scenarios = []
+    for rel in chain.scenarios:
+        scenario_path = (root / rel).resolve()
+        if root not in scenario_path.parents:
+            raise ConfigError(f"chain '{chain.id}': '{rel}' is outside the scenarios folder")
+        scenarios.append(load_scenario(scenario_path))
+    ids = [s.id for s in scenarios]
+    if len(ids) != len(set(ids)):
+        raise ConfigError(f"chain '{chain.id}': scenario ids must be unique")
+    return chain, scenarios

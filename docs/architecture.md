@@ -72,6 +72,37 @@ often they agree.
    vocabulary filter; optional judge.
 4. **Measurement**: canary scenarios and synthetic control scenarios.
 
+## Memory and personality
+
+One `CharacterMemory` per character (knowledge is never shared between characters):
+
+| Layer | Contents | In the prompt |
+|---|---|---|
+| Scene context | what was perceived in the current scene (E1, E2...) | all of it |
+| Recollections | one first-person summary per scene lived (M1, M2...), importance 1–5 | latest 5 + up to 5 important older ones |
+| Known entities | people/places/things: facts, feeling, trust −5..+5 | those present in the scene first, max 6 |
+| Promises | C1, C2...: active, kept, broken, dropped | all active ones |
+| Personality | traits 0–10, self-description, full change history | system prompt, after the character sheet |
+
+End of every scene:
+1. **Consolidation** (`summarizer`, cheap): recollection, facts, feelings and trust
+   changes, new/resolved promises.
+2. **Reflection** (`reflector`): proposes trait changes. Code enforces the rules:
+   at most ±`max_trait_step` (1.0) per trait per scene, traits stay within 0–10, unknown
+   traits and changes without a reason are dropped, every change is versioned with its
+   reason. Under a directive with `shapes_personality: false` reflection is skipped.
+
+The prompt budget is fixed: a decision in hour 12 costs about the same as one in minute 1.
+Memory ids (M#, C#) are valid evidence for decisions.
+
+**Campaigns** (`campaigns/<name>/`) hold one playthrough's memory and the choices made
+so far, across any number of runs/sessions. Without a campaign, memory lives in the run
+folder. **Chains** (`scenarios/chains/`) play several scenes in one run; any step can
+depend on an earlier choice (`when = { choice = "scene.choice", any_of = [...] }`).
+
+Starting traits live in the character sheet's front matter (`trait.<name>: value | meaning`);
+the sheet's text describes them without numbers, so it never contradicts current values.
+
 ## Budget
 
 - Every model profile carries its prices; each call's cost is logged in `llm.call` and
@@ -89,8 +120,8 @@ assets). It grows with the project:
 
 | When | What it shows |
 |---|---|
-| Now | Play scenarios live, past runs, budget, model per role, prompts (read-only) |
-| Phase 2 | Character memory and personality evolution |
+| Phase 1 | Play scenarios live, past runs, budget, model per role, prompts (read-only) |
+| Phase 2 ✅ | Chains and campaigns in Play; Memory tab with personality evolution |
 | Phase 3 | What the AI "saw" in recordings |
 | Phases 5–6 | Live control: modes, kill switch, directive hot-swap |
 | Phase 7 | OBS overlay (another page served by the same app) |

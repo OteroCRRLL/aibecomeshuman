@@ -24,8 +24,8 @@ locked until the system is ready.
 | Phase | Scope | Status |
 |---|---|---|
 | 0 | Foundations | ✅ (real-model ping pending) |
-| 1 | Scenario simulator + decider + directives + budget | ✅ (Haiku test run pending) |
-| 2 | Memory and personality | |
+| 1 | Scenario simulator + decider + directives + budget | ✅ |
+| 2 | Memory and personality (campaigns, chains of scenes) | ✅ |
 | 3 | Offline perception (recordings) | |
 | 4 | Anti-metagaming guard and evaluations | |
 | 5 | Shadow-mode control (the AI suggests, you execute) | |
@@ -74,6 +74,9 @@ uv run aibh play scenarios/tram-stop.toml -p offline   # fake model, free
 uv run aibh play scenarios/tram-stop.toml              # Claude Haiku, a fraction of a cent
 uv run aibh play scenarios/tram-stop.toml -d bad_ideas # with another directive
 uv run aibh budget                                     # spend so far vs. the caps
+
+# A chain of scenes with memory kept in campaigns/test (a playthrough)
+uv run aibh play scenarios/chains/markus-week.toml -c test
 ```
 
 Expensive models are **locked**: a run that uses them (e.g. `-p video-claude`) needs
@@ -96,7 +99,8 @@ scenarios/         invented test scenes (TOML)
 src/aibecomeshuman/
   core/            event log and clock
   llm/             model port, adapters, recording/cassettes
-  cognition/       scene context and decider (stance, decisions, fallback)
+  cognition/       scene context, decider (stance, decisions, fallback), end-of-scene reflection
+  memory/          long-term memory and personality: models, storage, prompt rendering
   env/             environments (today: scripted scenarios)
   run/             run session and manifest
   budget.py        cost tracking and budget caps

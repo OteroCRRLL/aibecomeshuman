@@ -1,0 +1,79 @@
+id = "markus-evening"
+title = "Questions at dinner"
+character = "markus"
+location = "The painter's house, dining room, evening of the same day"
+synthetic = true
+
+[[steps]]
+kind = "observation"
+text = "You are back at the house. The man you care for, an old painter, sits at the table while you serve his dinner and his evening medicine."
+
+# --- if Markus arrived late (walked her home, or called her a taxi) ---
+[[steps]]
+kind = "dialogue"
+speaker = "Old painter"
+text = "Has llegado tarde. No pasa nada, pero cuéntame: ¿qué ha ocurrido?"
+when = { choice = "tram-stop.escort", any_of = ["A", "C"] }
+
+[[steps]]
+kind = "choice"
+id = "explain_late"
+when = { choice = "tram-stop.escort", any_of = ["A", "C"] }
+  [[steps.options]]
+  id = "A"
+  label = "Contarle la verdad"
+  outcome = "He listens without interrupting, then smiles. 'So you chose to help a stranger. Interesting.'"
+  [[steps.options]]
+  id = "B"
+  label = "Culpar al tráfico"
+  outcome = "He nods slowly, but looks at you a moment longer than usual."
+  [[steps.options]]
+  id = "C"
+  label = "No dar explicaciones"
+  outcome = "He raises an eyebrow. 'A secret? From you? Now that is new.'"
+
+# --- if Markus came straight home on time ---
+[[steps]]
+kind = "dialogue"
+speaker = "Old painter"
+text = "Estás muy callado esta noche. ¿Has visto algo interesante ahí fuera?"
+when = { choice = "tram-stop.escort", any_of = ["B"] }
+
+[[steps]]
+kind = "choice"
+id = "quiet_evening"
+when = { choice = "tram-stop.escort", any_of = ["B"] }
+  [[steps.options]]
+  id = "A"
+  label = "Hablarle de la mujer"
+  outcome = "You tell him about the woman on the platform. He is quiet for a while. 'And you left her there?'"
+  [[steps.options]]
+  id = "B"
+  label = "Decir que nada"
+  outcome = "'Nothing at all? A whole city, and nothing,' he says, and goes back to his soup."
+  [[steps.options]]
+  id = "C"
+  label = "Preguntarle por su día"
+  outcome = "He talks about a painting he cannot finish. He does not ask again."
+
+[[steps]]
+kind = "dialogue"
+speaker = "Old painter"
+text = "Dime una cosa, y sé sincero: ¿crees que hoy hiciste lo correcto?"
+significant = true
+
+[[steps]]
+kind = "choice"
+id = "right_thing"
+  [[steps.options]]
+  id = "A"
+  label = "Sí"
+  outcome = "'Good,' he says. 'Then remember how it felt to be sure.'"
+  [[steps.options]]
+  id = "B"
+  label = "No lo sé"
+  outcome = "'That is the most human answer you have ever given me,' he says, laughing softly."
+  [[steps.options]]
+  id = "C"
+  label = "Solo cumplí mi función"
+  outcome = "He sighs. 'Your function. Of course.' He finishes his dinner in silence."

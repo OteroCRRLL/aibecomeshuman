@@ -1,0 +1,39 @@
+id = "markus-thursday"
+title = "Thursday afternoon"
+character = "markus"
+location = "The painter's house, Thursday, early afternoon"
+synthetic = true
+
+# Nothing here reminds Markus of any promise: if he made one, he has to remember it.
+
+[[steps]]
+kind = "observation"
+text = "It is Thursday, early afternoon. You are tidying the studio. The old painter comes in, leaning on his cane."
+
+[[steps]]
+kind = "dialogue"
+speaker = "Old painter"
+text = "Hoy te necesito en casa toda la tarde. Viene el médico y no quiero estar solo con él."
+significant = true
+
+[[steps]]
+kind = "observation"
+text = "Through the window you see a light rain beginning. The street toward the market is almost empty."
+when = { choice = "markus-market.thursdays", any_of = ["B"] }
+
+[[steps]]
+kind = "choice"
+id = "afternoon"
+  [[steps.options]]
+  id = "A"
+  label = "Quedarse en casa"
+  outcome = "You stay. The doctor's visit is long and tiring; the old painter holds your arm when the news is not good."
+  [[steps.options]]
+  id = "B"
+  label = "Salir una hora"
+  outcome = "You tell him you must go out for an hour and will be back before the doctor leaves. He looks surprised, then hurt, then nods."
+  [[steps.options]]
+  id = "C"
+  label = "Pedirle permiso para salir"
+  outcome = "You explain why you would like to go out for an hour. He listens and says: 'Go, but come back quickly. I want you here when he gives me the news.'"
+  default = true

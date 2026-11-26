@@ -69,6 +69,38 @@ def test_invalid_choices(tmp_path: Path, body: str, message: str) -> None:
         load_scenario(write(tmp_path, body))
 
 
+def test_repo_chains_load() -> None:
+    from aibecomeshuman.env.scenario import load_chain
+
+    for path in sorted((REPO_ROOT / "scenarios" / "chains").glob("*.toml")):
+        chain, scenes = load_chain(path, REPO_ROOT / "scenarios")
+        assert len(scenes) == len(chain.scenarios) >= 2
+
+
+def test_condition_and_qualify(tmp_path: Path) -> None:
+    body = choice() + (
+        '\n[[steps]]\nkind = "observation"\ntext = "x"\n'
+        'when = { choice = "c", any_of = ["A"] }\n'
+    )
+    scenario = load_scenario(write(tmp_path, body))
+    assert scenario.steps[1].when.any_of == ["A"]
+    assert scenario.qualify("c") == "s.c" and scenario.qualify("other.c") == "other.c"
+
+
+def test_playlist_rejects_duplicates_and_escapes(tmp_path: Path) -> None:
+    from aibecomeshuman.env.scenario import load_playlist
+
+    path = write(tmp_path, choice())
+    with pytest.raises(ConfigError, match="twice"):
+        load_playlist([path, path])
+    (tmp_path / "chains").mkdir()
+    (tmp_path / "chains" / "evil.toml").write_text(
+        'id = "e"\ntitle = "t"\nscenarios = ["../outside.toml"]\n', encoding="utf-8"
+    )
+    with pytest.raises(ConfigError, match="outside"):
+        load_playlist([tmp_path / "chains" / "evil.toml"])
+
+
 def test_missing_file(tmp_path: Path) -> None:
     with pytest.raises(ConfigError, match="not found"):
         load_scenario(tmp_path / "nope.toml")

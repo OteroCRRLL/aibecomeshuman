@@ -4,6 +4,7 @@
     aibh run -p offline                     empty run: creates the manifest and the event log
     aibh ping -p offline -r decider         run with a single call to a role's model
     aibh play scenarios/<file>.toml         play a scenario (default run profile)
+    aibh play scenarios/chains/<x>.toml -c test   play a chain, memory kept in campaigns/test
     aibh budget                             show spend against the budget caps
     aibh ui                                 open the local control panel in the browser
     aibh events runs/<folder>               print a run's event log
@@ -22,10 +23,10 @@ from pathlib import Path
 from aibecomeshuman.budget import project_spent
 from aibecomeshuman.config import ConfigError, ProjectConfig, load_project
 from aibecomeshuman.core.events import read_events
-from aibecomeshuman.env.scenario import load_scenario
+from aibecomeshuman.env.scenario import load_playlist
 from aibecomeshuman.envfile import load_dotenv
 from aibecomeshuman.llm.types import LLMError, LLMRequest, Message
-from aibecomeshuman.play import ScenarioRunner
+from aibecomeshuman.play import play_scenarios
 from aibecomeshuman.run.session import RunSession
 
 PING_SYSTEM = "Answer in one short sentence."
@@ -101,14 +102,16 @@ def cmd_ping(args: argparse.Namespace) -> int:
 
 def cmd_play(args: argparse.Namespace) -> int:
     project = _load(args)
-    scenario = load_scenario(Path(args.scenario))
+    scenarios = load_playlist([Path(p) for p in args.scenarios])
     session = _session(project, args)
     with session:
-        runner = ScenarioRunner(session, scenario, directive=args.directive, echo=print)
-        decisions = runner.run()
+        decisions = play_scenarios(
+            session, scenarios, directive=args.directive, echo=print, campaign=args.campaign
+        )
     fallbacks = sum(d.source == "fallback" for d in decisions)
+    where = f"campaign '{args.campaign}'" if args.campaign else "this run only"
     print(
-        f"\n{len(decisions)} decisions ({fallbacks} by fallback) · "
+        f"\n{len(decisions)} decisions ({fallbacks} by fallback) · memory: {where} · "
         f"cost ${session.manifest.cost_usd:.6f} · run: {session.dir}"
     )
     return 0
@@ -180,10 +183,15 @@ def build_parser() -> argparse.ArgumentParser:
     ping.add_argument("text", nargs="?", help="text to send (optional)")
     ping.set_defaults(func=cmd_ping)
 
-    play = sub.add_parser("play", help="play a scenario without the game")
+    play = sub.add_parser("play", help="play scenarios or chains without the game")
     _add_run_args(play)
-    play.add_argument("scenario", help="path to a scenario .toml file")
+    play.add_argument(
+        "scenarios", nargs="+", help="scenario and/or chain .toml files, played in order"
+    )
     play.add_argument("-d", "--directive", help="override the run's directive")
+    play.add_argument(
+        "-c", "--campaign", help="keep memory in campaigns/<name> across runs (a playthrough)"
+    )
     play.set_defaults(func=cmd_play)
 
     budget = sub.add_parser("budget", help="show spend against the budget caps")

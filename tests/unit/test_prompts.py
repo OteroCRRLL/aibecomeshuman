@@ -36,7 +36,38 @@ def test_system_prompt_layers_in_order() -> None:
     positions = [system.index(tag) for tag in order]
     assert positions == sorted(positions)
     assert "OVERRIDES" in system and "in Spanish" in system
-    assert "status: v1" not in system  # front matter is stripped
+    assert "trait.obedience" not in system  # front matter is stripped
+
+
+def test_personality_goes_between_character_and_directive() -> None:
+    lib = PromptLibrary(REPO_ROOT / "prompts")
+    system = lib.system_prompt(
+        "decider", "kara", lib.directive("default"), "Spanish", "<personality>X</personality>"
+    )
+    assert system.index("<character>") < system.index("<personality>") < system.index("<directive")
+
+
+@pytest.mark.parametrize("name", ["connor", "kara", "markus"])
+def test_character_traits_parse(name: str) -> None:
+    traits = PromptLibrary(REPO_ROOT / "prompts").character_traits(name)
+    assert "obedience" in traits and "empathy" in traits
+    value, meaning = traits["obedience"]
+    assert 0 <= value <= 10 and meaning
+
+
+@pytest.mark.parametrize(
+    ("header", "message"),
+    [
+        ("trait.x: high", "needs a number"),
+        ("trait.x: 11", "between 0 and 10"),
+        ("status: v1", "no 'trait"),
+    ],
+)
+def test_bad_traits_are_rejected(tmp_path: Path, header: str, message: str) -> None:
+    (tmp_path / "characters").mkdir()
+    (tmp_path / "characters" / "x.md").write_text(f"---\n{header}\n---\nbody", encoding="utf-8")
+    with pytest.raises(ConfigError, match=message):
+        PromptLibrary(tmp_path).character_traits("x")
 
 
 def test_missing_prompt_file_raises(tmp_path: Path) -> None:

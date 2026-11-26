@@ -11,8 +11,9 @@ build/
 # Secrets
 .env
 
-# Run outputs (events, manifests, recorded calls)
+# Run outputs (events, manifests, recorded calls) and playthrough memory
 runs/
+campaigns/
 
 # Game captures and recordings: copyrighted content, never committed.
 # Only the labels (data/labels/) are versioned.
