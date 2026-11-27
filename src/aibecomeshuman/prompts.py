@@ -41,9 +41,38 @@ class Directive(BaseModel):
     shapes_personality: bool = True
 
 
+class Briefing(BaseModel):
+    """What a character knows walking into a game chapter (prompts/briefings/NN-*.md)."""
+
+    chapter: int
+    title: str  # as the game shows it, for the operator (never shown to the agent)
+    character: str
+    text: str
+
+
 class PromptLibrary:
     def __init__(self, prompts_dir: Path) -> None:
         self.dir = prompts_dir
+
+    def briefings(self) -> list[Briefing]:
+        found = []
+        for path in sorted((self.dir / "briefings").glob("*.md")):
+            meta, body = split_front_matter(path.read_text(encoding="utf-8"))
+            try:
+                found.append(
+                    Briefing(
+                        chapter=int(meta["chapter"]),
+                        title=meta.get("title", path.stem),
+                        character=meta["character"],
+                        text=body,
+                    )
+                )
+            except (KeyError, ValueError) as e:
+                raise ConfigError(f"{path}: needs 'chapter' (number) and 'character'") from e
+        return sorted(found, key=lambda b: b.chapter)
+
+    def briefing(self, chapter: int) -> Briefing | None:
+        return next((b for b in self.briefings() if b.chapter == chapter), None)
 
     def _read(self, *parts: str) -> tuple[dict[str, str], str]:
         path = self.dir.joinpath(*parts)

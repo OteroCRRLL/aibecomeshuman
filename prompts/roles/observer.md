@@ -31,6 +31,9 @@ Subtitles:
 - The camera often shows the person LISTENING, not the one speaking. Do not assume the
   person in the frame is speaking unless their mouth clearly moves and nobody else is
   in the shot.
+- When the protagonist has just arrived and someone announces or reports an arrival
+  ("the X is here", said to others or into a radio), say in the description who says it
+  and that it happens as the protagonist arrives: it is probably about the protagonist.
 - In a conversation between the protagonist and someone else, turns usually alternate.
   Right after the protagonist picks an option, the next line is the protagonist's.
 - `speaker_basis`: `visible_speaking` only when clear, `after_choice`, `context` (it

@@ -101,15 +101,19 @@ class ShadowSession:
         self,
         session: RunSession,
         source: FrameSource,
-        character: str,
+        character: str | None = None,
         campaign: str | None = None,
         echo: Echo | None = None,
         stop: threading.Event | None = None,
+        chapter: int | None = None,
     ) -> None:
+        """`character` None = the protagonist of the chapter's briefing (connor if none).
+        `chapter` None = continue where the campaign left off."""
         assert session.events is not None and session.dir is not None
         self.session = session
         self.source = source
-        self.character = character
+        self.fixed_character = character is not None
+        self.character = character or "connor"
         self.say = echo or (lambda _: None)
         self.stop = stop or threading.Event()
         self.settings = session.project.app.perception
@@ -121,10 +125,18 @@ class ShadowSession:
         self.frames_dir.mkdir(exist_ok=True)
 
         library = PromptLibrary(session.project.prompts_dir)
+        self.library = library
+        if chapter is not None:
+            self.campaign.state.chapter = chapter
+        briefing = library.briefing(self.campaign.state.chapter)
+        if briefing is not None and not self.fixed_character:
+            self.character = briefing.character
         self.observer = Observer(session.llm("observer"), library.role("observer"))
         self.redactor = Redactor(self.settings.hidden_patterns)
-        self.ctx = ObserverContext(protagonist=character.capitalize())
-        self.builder = TranscriptBuilder(character.capitalize(), 1.0 / self.live.frames_per_s)
+        self.ctx = ObserverContext(protagonist=self.character.capitalize())
+        self.builder = TranscriptBuilder(
+            self.character.capitalize(), 1.0 / self.live.frames_per_s
+        )
 
         self._lock = threading.Lock()
         self._results: dict[int, Observation | None] = {}
@@ -273,16 +285,34 @@ class ShadowSession:
     # -- the character (agent thread) ----------------------------------------------
 
     def _new_runner(self) -> ScenarioRunner:
+        """A scene for the current chapter: its briefing, and its protagonist if known."""
         self.report.scenes += 1
         n = self.report.scenes
+        chapter = self.campaign.state.chapter
+        briefing = self.library.briefing(chapter)
+        if briefing is not None and not self.fixed_character:
+            self.character = briefing.character
+        # The observer and the transcript follow the chapter's protagonist.
+        self.ctx.protagonist = self.character.capitalize()
+        self.builder.protagonist = self.character.capitalize()
+        title = f"Chapter {chapter}" + (f": {briefing.title}" if briefing else "")
         scenario = Scenario(
             id=f"live-{self.session.dir.name}-{n}",  # type: ignore[union-attr]
-            title=f"Live session, part {n}",
+            title=title,
             character=self.character,
             synthetic=False,
             steps=[ObservationStep(kind="observation", text="(live)")],
         )
-        runner = ScenarioRunner(self.session, scenario, echo=self.say, campaign=self.campaign)
+        self.events.emit(
+            "shadow.chapter",
+            source="live",
+            payload={"chapter": chapter, "title": briefing.title if briefing else "",
+                     "character": self.character, "briefing": bool(briefing)},
+        )
+        runner = ScenarioRunner(
+            self.session, scenario, echo=self.say, campaign=self.campaign,
+            briefing=briefing.text if briefing else "",
+        )
         runner.operator_controlled = True
         runner.begin()
         return runner
@@ -304,6 +334,8 @@ class ShadowSession:
                 if kind == "chapter_end":
                     self.say("  -- end of chapter: saving memory --")
                     runner.finish()
+                    self.campaign.state.chapter += 1  # the game's chapters come in order
+                    self.campaign.save(self.character)
                     runner = self._new_runner()
                     continue
                 if kind == "menu":

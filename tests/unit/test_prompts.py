@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pytest
 
+from aibecomeshuman.cognition.context import SceneContext as _SceneContext
 from aibecomeshuman.config import ConfigError
 from aibecomeshuman.prompts import PromptLibrary, split_front_matter
 
@@ -82,3 +83,14 @@ def test_invalid_directive_priority(tmp_path: Path) -> None:
     )
     with pytest.raises(ConfigError, match="priority"):
         PromptLibrary(tmp_path).directive("x")
+
+
+def test_briefings_are_valid_and_always_in_context() -> None:
+    library = PromptLibrary(REPO_ROOT / "prompts")
+    briefings = library.briefings()
+    assert briefings and briefings[0].chapter == 1 and briefings[0].character == "connor"
+    assert library.briefing(999) is None
+    ctx = _SceneContext("s", briefing="You are the negotiator.")
+    for i in range(30):
+        ctx.add("observation", f"thing {i}")
+    assert "<briefing>You are the negotiator.</briefing>" in ctx.render(last_n=5)

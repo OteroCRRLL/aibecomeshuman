@@ -93,7 +93,8 @@ class LiveRequest(BaseModel):
     # "obs", "screen", "screen:2", or a file in the recordings folder (for testing).
     source: str = "obs"
     profile: str = "default"
-    character: str = "connor"
+    character: str | None = None  # None = the chapter's protagonist
+    chapter: int | None = None  # None = where the campaign left off
     campaign: str | None = None
     speed: float = 1.0
     start: str | None = None
@@ -279,7 +280,12 @@ def create_app(root: Path | None = None) -> FastAPI:
             else []
         )
         directives = sorted(f.stem for f in (p.prompts_dir / "directives").glob("*.md"))
+        briefings = [
+            {"chapter": b.chapter, "title": b.title, "character": b.character}
+            for b in PromptLibrary(p.prompts_dir).briefings()
+        ]
         return {
+            "briefings": briefings,
             "roles": list(ROLES),
             "models": [
                 {
@@ -469,7 +475,10 @@ def create_app(root: Path | None = None) -> FastAPI:
         active["stop"] = stop
 
         def work(s: RunSession) -> None:
-            ShadowSession(s, source, req.character, campaign=campaign, stop=stop).run()
+            ShadowSession(
+                s, source, req.character or None, campaign=campaign, stop=stop,
+                chapter=req.chapter,
+            ).run()
 
         return start_job(session, work)
 
@@ -516,7 +525,11 @@ def create_app(root: Path | None = None) -> FastAPI:
     @app.get("/api/campaigns/{name}")
     def campaign(name: str) -> dict[str, Any]:
         store = campaign_store(name)
-        return {"name": name, "characters": store.characters()}
+        return {
+            "name": name,
+            "characters": store.characters(),
+            "chapter": store.load_state().chapter,
+        }
 
     @app.get("/api/campaigns/{name}/{character}")
     def campaign_character(name: str, character: str) -> dict[str, Any]:

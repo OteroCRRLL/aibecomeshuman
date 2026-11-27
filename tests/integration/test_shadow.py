@@ -114,6 +114,31 @@ def test_closing_the_game_ends_normally(project: ProjectConfig) -> None:
     assert events[-1].payload["status"] == "ok"
 
 
+class ChapterObserver:
+    """Plays a bit, shows the end-of-chapter flowchart, then plays again."""
+
+    def observe(self, jpeg, t, label, ctx, earlier=None) -> Observation:
+        if 3 <= t < 5:
+            return Observation(t=t, screen="flowchart")
+        return Observation(t=t, description=f"something happens at {int(t)}")
+
+
+def test_briefing_protagonist_and_chapter_advance(project: ProjectConfig, tmp_path) -> None:
+    clip = _clip(tmp_path / "chapters.avi", seconds=8)
+    with RunSession(project, "offline") as session:
+        shadow = ShadowSession(session, RecordingSource(clip, speed=2), campaign=None)
+        shadow.observer = ChapterObserver()
+        assert shadow.character == "connor"  # from chapter 1's briefing
+        shadow.run()
+        assert shadow.campaign.state.chapter == 2
+    events = list(read_events(session.dir / "events.jsonl"))
+    chapters = [e.payload for e in events if e.type == "shadow.chapter"]
+    assert [c["chapter"] for c in chapters] == [1, 2]
+    assert chapters[0]["briefing"] and not chapters[1]["briefing"]
+    started = [e.payload for e in events if e.type == "scene.started"]
+    assert "negotiator" in started[0]["briefing"] and started[1]["briefing"] == ""
+
+
 def test_live_tab_runs_a_recording(project_dir: Path) -> None:
     folder = project_dir / "data" / "recordings"
     folder.mkdir(parents=True)

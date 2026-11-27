@@ -32,6 +32,8 @@ def check_campaign_name(name: str) -> str:
 class CampaignState(BaseModel):
     # "<scenario id>.<choice id>" -> option id chosen
     choices: dict[str, str] = Field(default_factory=dict)
+    # Live play: the game chapter in progress (picks the briefing and the protagonist).
+    chapter: int = Field(default=1, ge=1)
 
 
 def _write(path: Path, model: BaseModel) -> None:

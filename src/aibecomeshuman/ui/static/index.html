@@ -157,6 +157,7 @@
       <div class="grid">
         <div><label for="live-source">Source</label><select id="live-source"></select></div>
         <div><label for="live-profile">Run profile</label><select id="live-profile"></select></div>
+        <div><label for="live-chapter">Chapter</label><select id="live-chapter"></select></div>
         <div><label for="live-character">Protagonist</label><select id="live-character"></select></div>
         <div><label for="live-campaign">Campaign (optional)</label>
           <input id="live-campaign" class="text-in" placeholder="e.g. shadow-test" autocomplete="off"></div>
@@ -328,7 +329,8 @@ function makeRenderer(container) {
       case "scene.started":
         container.append(el("div", { class: "ev scene" },
           `${p.title} · ${p.character} · directive: ${p.directive}`,
-          p.location ? el("div", { class: "hint" }, p.location) : null));
+          p.location ? el("div", { class: "hint" }, p.location) : null,
+          p.briefing ? el("div", { class: "hint" }, `Briefing: ${p.briefing}`) : null));
         break;
       case "scene.perceived":
         if (p.kind === "dialogue") {
@@ -414,6 +416,11 @@ function makeRenderer(container) {
         break;
       case "shadow.started":
         container.append(el("div", { class: "ev scene" }, `Watching ${p.source} · ${p.character}`));
+        break;
+      case "shadow.chapter":
+        container.append(el("div", { class: "ev scene" },
+          `Chapter ${p.chapter}${p.title ? ": " + p.title : ""} · ${p.character}`,
+          el("div", { class: "hint" }, p.briefing ? "Briefing given to the character" : "No briefing written for this chapter")));
         break;
       case "shadow.suggestion":
         container.append(el("div", { class: "ev stance" }, el("div", { class: "tag" },
@@ -606,7 +613,12 @@ async function loadLive() {
 }
 function onLiveProfileChange() {
   const prof = OPTIONS.profiles.find((p) => p.name === $("live-profile").value);
-  if (prof) fillSelect($("live-character"), prof.characters.map((c) => [c, c]), $("live-character").value || prof.characters[0]);
+  if (prof) fillSelect($("live-character"),
+    [["", "Automatic (the chapter's)"], ...prof.characters.map((c) => [c, c])], $("live-character").value || "");
+  fillSelect($("live-chapter"),
+    [["", "Continue the campaign (or chapter 1)"],
+     ...OPTIONS.briefings.map((b) => [String(b.chapter), `${b.chapter} · ${b.title} (${b.character})`])],
+    $("live-chapter").value || "");
 }
 function onLiveSourceChange() {
   const v = $("live-source").value;
@@ -626,7 +638,9 @@ $("live-start").addEventListener("click", async () => {
   let cost = 0, frames = 0;
   try {
     const { job_id } = await api("/api/live/start", { method: "POST", body: JSON.stringify({
-      source: $("live-source").value, profile: $("live-profile").value, character: $("live-character").value,
+      source: $("live-source").value, profile: $("live-profile").value,
+      character: $("live-character").value || null,
+      chapter: $("live-chapter").value ? parseInt($("live-chapter").value) : null,
       campaign: $("live-campaign").value.trim() || null,
       speed: parseFloat($("live-speed").value) || 1, start: $("live-from").value.trim() || null,
     }) });

@@ -22,9 +22,11 @@ class ContextEntry(BaseModel):
 
 
 class SceneContext:
-    def __init__(self, scene_id: str, location: str = "") -> None:
+    def __init__(self, scene_id: str, location: str = "", briefing: str = "") -> None:
         self.scene_id = scene_id
         self.location = location
+        # What the character knows walking into the scene (its assignment); always shown.
+        self.briefing = briefing
         self.entries: list[ContextEntry] = []
 
     def add(self, kind: EntryKind, text: str, speaker: str | None = None) -> ContextEntry:
@@ -39,6 +41,8 @@ class SceneContext:
     def render(self, last_n: int | None = None) -> str:
         entries = self.entries if last_n is None else self.entries[-last_n:]
         lines = [f'<scene location="{escape(self.location)}">']
+        if self.briefing:
+            lines.append(f"<briefing>{escape(self.briefing, quote=False)}</briefing>")
         for e in entries:
             speaker = f' speaker="{escape(e.speaker)}"' if e.speaker else ""
             lines.append(

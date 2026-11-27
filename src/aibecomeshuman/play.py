@@ -74,6 +74,7 @@ class ScenarioRunner:
         directive: str | None = None,
         echo: Echo | None = None,
         campaign: Campaign | None = None,
+        briefing: str = "",
     ) -> None:
         self.session = session
         self.scenario = scenario
@@ -88,7 +89,7 @@ class ScenarioRunner:
         self.directive: Directive = self.prompts.directive(directive or profile.directive)
         self.campaign = campaign or Campaign(session)
         self.memory = self.campaign.memory_for(scenario.character)
-        self.ctx = SceneContext(scenario.id, scenario.location)
+        self.ctx = SceneContext(scenario.id, scenario.location, briefing=briefing)
         self.decider = Decider(
             prompts=self.prompts,
             character=scenario.character,
@@ -206,9 +207,12 @@ class ScenarioRunner:
                 "campaign": self.campaign.name,
                 "memories": len(self.memory.items),
                 "personality_version": self.memory.personality.version,
+                "briefing": self.ctx.briefing,
             },
         )
         self._echo(f"== {s.title} ({s.character}) · directive: {self.directive.name} ==")
+        if self.ctx.briefing:
+            self._echo(f"   briefing: {self.ctx.briefing}")
         if self.memory.items:
             self._echo(f"   (remembers {len(self.memory.items)} earlier scene(s))")
 

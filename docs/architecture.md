@@ -121,6 +121,24 @@ OBS / screen / recording --(2 fps, local signals)--> keyframes
   ~4 s after the menu appears (one fallback at 9 s), the operator's pick identified in
   6 of 7 checked menus, ~$0.12 for 4 minutes.
 
+## Chapter briefings
+
+A character walks into each chapter knowing why it is there (Connor knows he was sent as
+the negotiator). Without that, the agent decides without knowing its own role, which
+compares how well models guess the context rather than how they decide.
+
+- One file per chapter in `prompts/briefings/NN-*.md`: `chapter`, `title` (operator
+  only), `character`, and a short text with only what the character knows walking in:
+  where it goes and why. Nothing that happens later, no names it was not told, no advice.
+  The same briefings for every AI in the comparison; written by the project, reviewed by
+  the operator.
+- The briefing is part of the scene context (always shown, never trimmed) and of the
+  judge's record.
+- The campaign stores the chapter in progress. Live play starts there (or at the chapter
+  picked in the panel), takes the protagonist from the briefing, and moves to the next
+  chapter when the end-of-chapter flowchart appears (the game's chapters are in a fixed
+  order).
+
 ## Anti-metagaming
 
 1. **Perception** (phase 3): the agent only gets text; menus, the flowchart, tutorial

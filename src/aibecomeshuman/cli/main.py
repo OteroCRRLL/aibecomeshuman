@@ -173,7 +173,8 @@ def cmd_shadow(args: argparse.Namespace) -> int:
     stop = threading.Event()
     with session:
         shadow = ShadowSession(
-            session, source, args.character, campaign=args.campaign, echo=print, stop=stop
+            session, source, args.character, campaign=args.campaign, echo=print, stop=stop,
+            chapter=args.chapter,
         )
         print(f"Watching {source.name}. Play normally; press Ctrl+C to stop.\n")
         try:
@@ -305,8 +306,13 @@ def build_parser() -> argparse.ArgumentParser:
     shadow.add_argument(
         "--source", default="obs", help="obs (default), screen, screen:2, or a recording file"
     )
-    shadow.add_argument("-c", "--character", default="connor", help="protagonist")
+    shadow.add_argument(
+        "-c", "--character", help="protagonist (default: the chapter's, from its briefing)"
+    )
     shadow.add_argument("--campaign", help="keep memory in campaigns/<name>")
+    shadow.add_argument(
+        "--chapter", type=int, help="game chapter to start at (default: where the campaign is)"
+    )
     shadow.add_argument("--speed", type=float, default=1.0, help="recordings only: playback speed")
     shadow.add_argument("--from", dest="start", help="recordings only: start time, e.g. 07:30")
     shadow.set_defaults(func=cmd_shadow)
