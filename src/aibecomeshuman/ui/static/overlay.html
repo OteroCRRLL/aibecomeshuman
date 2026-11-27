@@ -51,6 +51,7 @@
   .result .tag { padding: 2px 10px; border-radius: 999px; font-weight: 800; font-size: 16px; }
   .same { background: rgba(76, 211, 138, .2); color: var(--ok); }
   .diff { background: rgba(255, 107, 97, .18); color: var(--bad); }
+  .unsure { background: rgba(159, 176, 200, .18); color: var(--muted); }
   @keyframes pop { from { transform: translateY(12px); opacity: 0; } to { transform: none; opacity: 1; } }
   @keyframes pulse { 50% { opacity: .4; } }
 </style>
@@ -127,13 +128,19 @@ function handle(ev) {
       break;
     }
     case "shadow.compare": {
-      if (!p.picked || !p.suggested) break;
-      state.compared += 1;
-      if (p.agreed) state.agreed += 1;
-      $("score").replaceChildren("Coincide contigo ", el("b", "", `${state.agreed}/${state.compared}`));
+      if (!p.suggested) break;
       const res = el("div", "result");
-      res.append(el("span", "tag " + (p.agreed ? "same" : "diff"), p.agreed ? "IGUAL" : "DISTINTO"),
-                 el("span", "", `Tú: ${p.picked} · IA: ${p.suggested}`));
+      if (p.agreed === null || p.agreed === undefined) {
+        // Not sure what the operator picked: say so, and keep it out of the score.
+        res.append(el("span", "tag unsure", "SIN CONFIRMAR"),
+                   el("span", "", p.picked ? `¿Tú: ${p.picked}?` : "No se vio tu elección"));
+      } else {
+        state.compared += 1;
+        if (p.agreed) state.agreed += 1;
+        $("score").replaceChildren("Coincide contigo ", el("b", "", `${state.agreed}/${state.compared}`));
+        res.append(el("span", "tag " + (p.agreed ? "same" : "diff"), p.agreed ? "IGUAL" : "DISTINTO"),
+                   el("span", "", `Tú: ${p.picked} · IA: ${p.suggested}`));
+      }
       $("choice").append(res);
       hideChoiceLater(9000);
       break;

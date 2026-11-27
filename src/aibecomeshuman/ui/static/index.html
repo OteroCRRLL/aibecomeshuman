@@ -432,10 +432,13 @@ function makeRenderer(container) {
           `Suggestion · ${p.seconds_after_menu} s after the menu appeared${p.source === "fallback" ? " · fallback" : ""}`),
           el("strong", {}, `${p.button} ${p.suggested}`), el("div", { class: "hint" }, p.reasoning || "")));
         break;
-      case "shadow.compare":
-        container.append(el("div", { class: "ev " + (p.agreed ? "memory" : "banner") },
-          `You picked ${p.picked || "(not seen)"} · the AI suggested ${p.suggested || "—"} · ${p.agreed ? "same" : "different"}`));
+      case "shadow.compare": {
+        const verdict = p.agreed === null || p.agreed === undefined ? "not sure what you picked"
+          : p.agreed ? "same" : "different";
+        container.append(el("div", { class: "ev " + (p.agreed ? "memory" : p.agreed === false ? "banner" : "obs") },
+          `You picked ${p.picked || "(not seen)"} (${p.picked_by || "—"}) · the AI suggested ${p.suggested || "—"} · ${verdict}`));
         break;
+      }
       case "guard.flag":
         container.append(el("div", { class: "ev banner" },
           `Guard: the ${p.kind} uses ${p.terms.join(", ")} without having met it`,

@@ -94,6 +94,22 @@ def test_shadow_stops_on_request(project: ProjectConfig, tmp_path: Path) -> None
     assert report.keyframes == 0
 
 
+def test_picks_are_compared_with_the_suggestion_of_that_moment(
+    project: ProjectConfig, tmp_path
+) -> None:
+    """Question menus come back with the remaining options: pair by time, not by options."""
+    from aibecomeshuman.live.shadow import _Suggestion
+
+    with RunSession(project, "offline") as session:
+        shadow = ShadowSession(session, RecordingSource(_clip(tmp_path / "c.avi", 2)), "connor")
+        shadow._suggested = [
+            _Suggestion(["NOMBRE", "COMPORTAMIENTO", "CÓDIGO"], "NOMBRE", {}, 150.0),
+            _Suggestion(["COMPORTAMIENTO", "CÓDIGO"], "COMPORTAMIENTO", {}, 166.0),
+        ]
+        assert shadow._suggestion_at(152.0, ["NOMBRE", "COMPORTAMIENTO", "CÓDIGO"]) == "NOMBRE"
+        assert shadow._suggestion_at(168.0, ["COMPORTAMIENTO", "CÓDIGO"]) == "COMPORTAMIENTO"
+
+
 class ClosingGame:
     """A source whose game is closed after a few frames."""
 

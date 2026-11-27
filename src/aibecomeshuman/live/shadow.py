@@ -117,6 +117,7 @@ class _Suggestion:
     labels: list[str]
     suggested: str
     buttons: dict[str, str]
+    t: float = 0.0  # when the menu was first seen
 
 
 class ShadowSession:
@@ -396,7 +397,7 @@ class ShadowSession:
             same = self._suggested and self._overlaps(self._suggested[-1].labels, labels)
             if same and not closed_since:
                 return
-            self._suggested.append(_Suggestion(labels, "", {}))
+            self._suggested.append(_Suggestion(labels, "", {}, visible.t))
         buttons = {o.label.strip(): o.button for o in visible.choice.options}
         # The countdown started when the frame was captured, not when it was read.
         payload = (labels, buttons, visible.choice.timed, captured_at, visible.choice.about)
@@ -538,7 +539,7 @@ class ShadowSession:
         )
         decision, label = runner.suggest(choice)
         with self._lock:
-            match = next((s for s in self._suggested if s.labels == labels), None)
+            match = next((s for s in reversed(self._suggested) if s.labels == labels), None)
             if match is not None:
                 match.suggested, match.buttons = label, buttons
         self.report.suggestions += 1
@@ -553,39 +554,58 @@ class ShadowSession:
         )
 
     def _resolve_pick(self, runner, choice_item: TranscriptItem, after: list) -> None:
-        """Work out what the operator picked: the words of the protagonist's next line
-        first (most reliable), then a highlighted option, then a quick text-only guess."""
+        """Work out what the operator picked, and how sure we are.
+
+        Sure: the protagonist's next line repeats words of one option, or the highlighted
+        option and a text-only guess agree. Unsure: only one of those, or they disagree.
+        A guess is only tried if the protagonist says something afterwards (silent
+        actions, like picking up an object, give it nothing to go on)."""
+        labels = [o.label for o in choice_item.options]
         highlighted = choice_item.chosen
         probe = choice_item.model_copy(update={"chosen": ""})
         infer_picks([probe, *after])
-        picked, basis = probe.chosen, "words"
-        if not picked and highlighted:
-            picked, basis = highlighted, "highlight"
-        if not picked and after:
-            picked, basis = guess_pick(self.session.llm("observer"), choice_item, after), "guess"
+        picked, basis, sure = probe.chosen, "words", bool(probe.chosen)
+        if not picked:
+            protagonist = self.character.lower()
+            spoke = [i for i in after if protagonist in i.speaker.lower()]
+            guess = guess_pick(self.session.llm("observer"), choice_item, after) if spoke else ""
+            if highlighted and guess:
+                agree = similar(highlighted, guess) >= 0.85
+                picked, basis, sure = highlighted, "highlight+guess", agree
+            elif highlighted or guess:
+                picked = highlighted or guess
+                basis, sure = ("highlight" if highlighted else "guess"), False
         choice_item.chosen = picked
-        labels = [o.label for o in choice_item.options]
-        with self._lock:
-            suggestion = next(
-                (s for s in reversed(self._suggested) if self._overlaps(s.labels, labels)), None
-            )
-        suggested = suggestion.suggested if suggestion else ""
+        suggested = self._suggestion_at(choice_item.t, labels)
         if picked:
             runner.record_pick(picked, choice_item.about)
             self.ctx.just_chosen = picked
+        same = bool(picked and suggested and similar(picked, suggested) >= 0.85)
         comparison = {
             "t": choice_item.t,
             "options": labels,
             "suggested": suggested,
             "picked": picked,
             "picked_by": basis if picked else "",
-            "agreed": bool(picked and suggested and similar(picked, suggested) >= 0.85),
+            "sure": sure,
+            # None = we could not tell for sure what the operator picked.
+            "agreed": same if (sure and suggested) else None,
         }
-        if picked and suggested:
+        if comparison["agreed"] is not None:
             self.report.compared += 1
-            self.report.agreed += comparison["agreed"]
+            self.report.agreed += same
         self.report.comparisons.append(comparison)
         self.events.emit("shadow.compare", source="live", payload=comparison)
-        verdict = "same" if comparison["agreed"] else "different"
+        verdict = {True: "same", False: "different", None: "not sure"}[comparison["agreed"]]
         self.say(f"  -- you picked {picked or '(not seen)'}; suggested {suggested or '-'} "
                  f"({verdict})")
+
+    def _suggestion_at(self, t: float, labels: list[str]) -> str:
+        """The suggestion made for the menu that was up at time `t` (menus with the same
+        options come back, e.g. questions left after one is asked: time tells them apart)."""
+        with self._lock:
+            candidates = [s for s in self._suggested if s.suggested and
+                          self._overlaps(s.labels, labels)]
+        if not candidates:
+            return ""
+        return min(candidates, key=lambda s: abs(s.t - t)).suggested
