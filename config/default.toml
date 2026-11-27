@@ -32,6 +32,8 @@ timed_choice_s = 6.0
 stance_every = 12
 # Key action moments are re-read by the stronger observer, up to this spend per chapter.
 strong_cap_per_chapter_usd = 0.15
+# Read subtitles on this PC with the free Windows OCR (Spanish), not with the vision model.
+subtitles_ocr = true
 
 [perception]
 # Game recordings (never committed).

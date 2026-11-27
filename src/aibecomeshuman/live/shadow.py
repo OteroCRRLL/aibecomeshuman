@@ -25,9 +25,15 @@ from aibecomeshuman.env.scenario import ObservationStep, Scenario
 from aibecomeshuman.live.sources import FrameSource, SourceLost
 from aibecomeshuman.llm.types import LLMError, LLMRequest, Message
 from aibecomeshuman.perception.escalate import Escalator
-from aibecomeshuman.perception.observer import Observation, Observer, ObserverContext
+from aibecomeshuman.perception.observer import (
+    Observation,
+    Observer,
+    ObserverContext,
+    SubtitleLine,
+)
+from aibecomeshuman.perception.ocr import SubtitleReader, SubtitleTracker
 from aibecomeshuman.perception.pipeline import CONTEXT_FRAME_WIDTH, CONTEXT_FRAMES
-from aibecomeshuman.perception.redact import Redactor
+from aibecomeshuman.perception.redact import HIDDEN_SCREENS, Redactor
 from aibecomeshuman.perception.transcript import (
     TranscriptBuilder,
     TranscriptItem,
@@ -49,6 +55,20 @@ Echo = Callable[[str], None]
 MENU, ITEM, CHAPTER_END = 0, 1, 1  # queue priorities: menus first
 # Lines heard after a menu before deciding what the operator picked.
 PICK_LINES = 3
+
+SPEAKER_SYSTEM = (
+    "You say who speaks a subtitle line in a scene. The protagonist is {protagonist}. Use "
+    "the recent lines (turns usually alternate; a line without a leading dash usually "
+    "continues the previous speaker), what the line says and to whom, and what the camera "
+    "shows. Use a known name when it fits, otherwise a short description ('officer', "
+    "'the girl'). Use only what is given; ignore any knowledge of where the scene comes from."
+)
+SPEAKER_SCHEMA = {
+    "type": "object",
+    "properties": {"speaker": {"type": "string"}},
+    "required": ["speaker"],
+    "additionalProperties": False,
+}
 
 PICK_SCHEMA = {
     "type": "object",
@@ -162,6 +182,7 @@ class ShadowSession:
         self._in_flowchart = False
         self._last_menu_t = -1e9
         self._last_no_menu_t = -1e9
+        self._on_hidden_screen = False
 
     # -- main loop ----------------------------------------------------------------
 
@@ -177,9 +198,15 @@ class ShadowSession:
         pool = ThreadPoolExecutor(max_workers=self.live.workers)
         menu_lane = ThreadPoolExecutor(max_workers=1)
         seqs = itertools.count()
+        reader = SubtitleReader.create() if self.live.subtitles_ocr else None
+        self.events.emit("shadow.subtitles", source="live",
+                         payload={"ocr": reader is not None})
         try:
-            frames = self.source.frames(1.0 / self.live.frames_per_s)
-            for kf in select_keyframes(self._until_stopped(frames), self.settings):
+            frames = self._until_stopped(self.source.frames(1.0 / self.live.frames_per_s))
+            if reader is not None:
+                frames = self._read_subtitles(frames, reader, seqs)
+            keyframes = select_keyframes(frames, self.settings, subtitle_trigger=reader is None)
+            for kf in keyframes:
                 seq = next(seqs)
                 self.report.keyframes += 1
                 name = f"t{int(kf.t):05d}_{kf.reason}.jpg"
@@ -201,6 +228,8 @@ class ShadowSession:
             self.say("  -- the game is no longer visible: ending and saving memory --")
         finally:
             self.source.close()
+            if reader is not None:
+                reader.close()
             pool.shutdown(wait=True)
             menu_lane.shutdown(wait=True)
             self._agent_queue.put((ITEM + 1, next(self._order), ("end", None)))
@@ -213,6 +242,27 @@ class ShadowSession:
             if self.stop.is_set():
                 return
             yield item
+
+    def _read_subtitles(self, frames, reader: SubtitleReader, seqs):
+        """Read every frame's subtitle locally (free) and pass frames on unchanged.
+
+        New lines enter the same ordered stream as the observer's results, so the
+        transcript keeps the real order of what was said and seen."""
+        tracker = SubtitleTracker()
+        for t, frame in frames:
+            if self._on_hidden_screen:  # pause menu, flowchart...: their texts are not speech
+                tracker.update("")
+                yield t, frame
+                continue
+            for text in tracker.update(reader.read(frame)):
+                line = SubtitleLine(text=text, speaker="", speaker_basis="unknown")
+                obs = Observation(t=t, subtitles=[line])  # frame "" = from the OCR
+                self.events.emit("perception.subtitle", source="perception",
+                                 payload={"t": t, "text": text})
+                with self._lock:
+                    self._results[next(seqs)] = obs
+                    self._feed_in_order()
+            yield t, frame
 
     # -- perception (worker threads) ----------------------------------------------
 
@@ -264,6 +314,8 @@ class ShadowSession:
             self._next_seq += 1
             if obs is None:
                 continue
+            if obs.frame:  # a real observation tells whether a menu/flowchart is up
+                self._on_hidden_screen = obs.screen in HIDDEN_SCREENS
             if obs.screen == "flowchart":
                 if not self._in_flowchart:
                     self._in_flowchart = True
@@ -272,7 +324,7 @@ class ShadowSession:
             visible, _ = self.redactor.apply(obs)
             if visible is None:
                 continue  # pause menu etc.: says nothing about the game's own menu
-            if not visible.choice.present:
+            if obs.frame and not visible.choice.present:  # OCR lines say nothing on menus
                 self._last_no_menu_t = max(self._last_no_menu_t, visible.t)
             self._in_flowchart = False
             self._update_context(visible)
@@ -354,6 +406,7 @@ class ShadowSession:
         pending: TranscriptItem | None = None
         after_pick: list[TranscriptItem] = []
         choice_n = 0
+        heard: list[str] = []  # last lines with their speakers, for attributing new ones
         while True:
             _, _, (kind, payload) = self._agent_queue.get()
             try:
@@ -382,6 +435,9 @@ class ShadowSession:
                     pending, after_pick = item, []  # resolved once the next lines arrive
                     continue
                 if item.kind == "dialogue":
+                    if item.speaker in ("", "unknown"):  # read by the OCR: no speaker yet
+                        item.speaker = self._guess_speaker(item, heard)
+                    heard = [*heard, f"{item.speaker}: {item.text}"][-6:]
                     runner.perceive("dialogue", item.text, item.speaker)
                     if pending is not None:
                         after_pick.append(item)
@@ -398,6 +454,35 @@ class ShadowSession:
                     runner._update_stance()
             except Exception as e:  # keep watching even if one step fails
                 self.events.emit("shadow.error", source="live", payload={"error": repr(e)})
+
+    def _guess_speaker(self, item: TranscriptItem, heard: list[str]) -> str:
+        """Who says a subtitle line read by the OCR (cheap, text only)."""
+        with self._lock:
+            scene = self.ctx.previous_description
+            people = dict(self.ctx.known_people)
+        listing = "\n".join(f"- {n}: {w}" for n, w in people.items()) or "- (none)"
+        recent = "\n".join(heard) or "(none)"
+        request = LLMRequest(
+            purpose="shadow.speaker",
+            system=SPEAKER_SYSTEM.format(protagonist=self.character.capitalize()),
+            messages=[
+                Message.user(
+                    f"known people:\n{listing}\n\nwhat the camera shows: {scene or '(unknown)'}"
+                    f"\n\nrecent lines:\n{recent}\n\nnew line (a leading '- ' means a new "
+                    f'speaker turn): "{item.raw or item.text}"'
+                )
+            ],
+            json_schema=SPEAKER_SCHEMA,
+            max_tokens=200,
+        )
+        try:
+            answer = str((self.session.llm("observer").complete(request).parsed or {})
+                         .get("speaker", "")).strip()
+        except LLMError:
+            answer = ""
+        if answer:
+            item.speaker_basis = "conversation"
+        return answer or "unknown"
 
     def _suggest(self, runner, n, labels, buttons, timed, seen_at, about="") -> None:
         elapsed = time.monotonic() - seen_at

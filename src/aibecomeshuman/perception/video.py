@@ -197,8 +197,12 @@ def encode_jpeg(frame: np.ndarray, quality: int = 85) -> bytes:
 
 
 def select_keyframes(
-    frames: Iterator[tuple[float, np.ndarray]], settings: PerceptionSettings
+    frames: Iterator[tuple[float, np.ndarray]],
+    settings: PerceptionSettings,
+    subtitle_trigger: bool = True,
 ) -> Iterator[Keyframe]:
+    """`subtitle_trigger` False when subtitles are read some other way (local OCR): a new
+    subtitle then no longer sends a frame to the observer."""
     """Keep the frames where a menu shows up, the picture or the subtitles changed, plus a
     heartbeat. While a menu is on screen, a frame every 2 s (to see which option is picked)."""
     last_thumb: np.ndarray | None = None
@@ -216,7 +220,7 @@ def select_keyframes(
             reason = "first"
         elif menu >= MENU_MIN and (last_menu < MENU_MIN or t - last_sent >= MENU_REPEAT_S):
             reason = "menu"
-        elif last_subs is not None and new_subtitle(subs, last_subs):
+        elif subtitle_trigger and last_subs is not None and new_subtitle(subs, last_subs):
             reason = "subtitles"
         elif changed_ratio(thumb, last_thumb) >= settings.change_ratio:
             reason = "change"

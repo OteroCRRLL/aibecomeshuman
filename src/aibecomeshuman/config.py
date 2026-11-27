@@ -116,6 +116,8 @@ class LiveSettings(_Strict):
     # Key action moments (fast changes, no dialogue, something dramatic) are read again by
     # the `observer_strong` model, up to this much spend per game chapter.
     strong_cap_per_chapter_usd: float = Field(default=0.15, ge=0)
+    # Read subtitles with the free Windows OCR instead of sending frames for them.
+    subtitles_ocr: bool = True
 
 
 class AppConfig(_Strict):

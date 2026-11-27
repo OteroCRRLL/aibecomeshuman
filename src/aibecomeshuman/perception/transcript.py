@@ -47,6 +47,7 @@ class TranscriptItem(BaseModel):
     t: float
     kind: ItemKind
     text: str = ""
+    raw: str = ""  # dialogue: the line as shown (a leading "- " marks a new speaker turn)
     speaker: str = ""
     speaker_basis: str = ""
     # choices only
@@ -181,6 +182,7 @@ class TranscriptBuilder:
                     t=obs.t,
                     kind="dialogue",
                     text=text,
+                    raw=raw,
                     speaker=speaker or "unknown",
                     speaker_basis=basis,
                     frame=obs.frame,
