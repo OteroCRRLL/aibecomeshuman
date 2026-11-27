@@ -96,6 +96,23 @@ class PerceptionSettings(_Strict):
     hidden_patterns: list[str] = Field(default_factory=list)
 
 
+class LiveSettings(_Strict):
+    # OBS WebSocket (OBS 28+: Tools -> WebSocket Server Settings). The password goes in .env
+    # as OBS_WEBSOCKET_PASSWORD, never here.
+    obs_host: str = "localhost"
+    obs_port: int = Field(default=4455, gt=0, lt=65536)
+    # Name of the game capture source in OBS, exactly as shown in the Sources list.
+    obs_source: str = "Detroit"
+    # Frames checked per second (local, free); only changes reach the observer model.
+    frames_per_s: float = Field(default=2.0, gt=0, le=10)
+    # Observer calls in flight at once (menus always get their own, right away).
+    workers: int = Field(default=3, ge=1, le=8)
+    # The game's countdown is not readable; assume this much time for a timed choice.
+    timed_choice_s: float = Field(default=6.0, gt=0)
+    # Update the stance after this many new things perceived (lines, notices).
+    stance_every: int = Field(default=6, ge=1)
+
+
 class AppConfig(_Strict):
     paths: PathsConfig = Field(default_factory=PathsConfig)
     llm: LLMSettings = Field(default_factory=LLMSettings)
@@ -103,6 +120,7 @@ class AppConfig(_Strict):
     timing: TimingSettings = Field(default_factory=TimingSettings)
     memory: MemorySettings = Field(default_factory=MemorySettings)
     perception: PerceptionSettings = Field(default_factory=PerceptionSettings)
+    live: LiveSettings = Field(default_factory=LiveSettings)
 
 
 class ModelProfile(_Strict):

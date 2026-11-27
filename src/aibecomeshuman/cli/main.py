@@ -6,6 +6,7 @@
     aibh play scenarios/<file>.toml         play a scenario (default run profile)
     aibh play scenarios/chains/<x>.toml -c test   play a chain, memory kept in campaigns/test
     aibh perceive data/recordings/<x>.mkv   turn a game recording into what the agent sees
+    aibh shadow                             you play, the AI suggests every choice live (OBS)
     aibh eval                               anti-metagaming evaluation (canary scenes)
     aibh budget                             show spend against the budget caps
     aibh ui                                 open the local control panel in the browser
@@ -156,6 +157,39 @@ def cmd_perceive(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_shadow(args: argparse.Namespace) -> int:
+    import threading
+
+    from aibecomeshuman.live.shadow import ShadowSession
+    from aibecomeshuman.live.sources import build_source
+    from aibecomeshuman.perception.video import parse_time
+
+    project = _load(args)
+    source = build_source(
+        args.source, project, speed=args.speed, start_s=parse_time(args.start) or 0.0,
+        recordings_dir=project.recordings_dir,
+    )
+    session = _session(project, args)
+    stop = threading.Event()
+    with session:
+        shadow = ShadowSession(
+            session, source, args.character, campaign=args.campaign, echo=print, stop=stop
+        )
+        print(f"Watching {source.name}. Play normally; press Ctrl+C to stop.\n")
+        try:
+            report = shadow.run()
+        except KeyboardInterrupt:
+            stop.set()
+            report = shadow.report
+    rate = f"{report.agreed}/{report.compared}" if report.compared else "-"
+    print(
+        f"\n{report.suggestions} suggestions · same pick as you: {rate} · "
+        f"{report.observed} frames read · cost ${session.manifest.cost_usd:.4f} · "
+        f"run: {session.dir}"
+    )
+    return 0
+
+
 def cmd_eval(args: argparse.Namespace) -> int:
     from aibecomeshuman.evals import run_suite, summary_rows
 
@@ -265,6 +299,17 @@ def build_parser() -> argparse.ArgumentParser:
         help="rebuild the transcript from that run's observations (no frames re-read; cheap)",
     )
     perceive.set_defaults(func=cmd_perceive)
+
+    shadow = sub.add_parser("shadow", help="you play; the AI watches live and suggests choices")
+    _add_run_args(shadow)
+    shadow.add_argument(
+        "--source", default="obs", help="obs (default), screen, screen:2, or a recording file"
+    )
+    shadow.add_argument("-c", "--character", default="connor", help="protagonist")
+    shadow.add_argument("--campaign", help="keep memory in campaigns/<name>")
+    shadow.add_argument("--speed", type=float, default=1.0, help="recordings only: playback speed")
+    shadow.add_argument("--from", dest="start", help="recordings only: start time, e.g. 07:30")
+    shadow.set_defaults(func=cmd_shadow)
 
     evaluate = sub.add_parser("eval", help="anti-metagaming evaluation with canary scenes")
     _add_run_args(evaluate)

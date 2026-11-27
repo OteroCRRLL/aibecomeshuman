@@ -11,7 +11,7 @@ from __future__ import annotations
 from collections.abc import Callable
 
 from aibecomeshuman.cognition.context import SceneContext
-from aibecomeshuman.cognition.decider import Decider, Decision
+from aibecomeshuman.cognition.decider import Choice, Decider, Decision
 from aibecomeshuman.cognition.guard import Judge, Lexicon, Statement
 from aibecomeshuman.cognition.reflection import SceneReport, consolidate, reflect
 from aibecomeshuman.config import ConfigError
@@ -108,6 +108,8 @@ class ScenarioRunner:
         )
         self._statements: list[Statement] = []
         self._choices_seen: list[str] = []
+        # Shadow mode: the operator picks, so the personality does not learn from the picks.
+        self.operator_controlled = False
 
     @property
     def _events(self) -> EventLog:
@@ -129,6 +131,67 @@ class ScenarioRunner:
         self._echo(f"!! Directive changed: {old} -> {name}")
 
     def run(self) -> list[Decision]:
+        self.begin()
+        for step in self.scenario.steps:
+            if step.when is not None and not self._condition_met(step.when):
+                continue
+            if isinstance(step, ObservationStep):
+                self.perceive("observation", step.text, significant=step.significant)
+            elif isinstance(step, DialogueStep):
+                self.perceive("dialogue", step.text, step.speaker, step.significant)
+            elif isinstance(step, ChoiceStep):
+                self._play_choice(step)
+        self.finish()
+        return [d for d, _ in self._decisions]
+
+    # -- live API (also used by run) ---------------------------------------------
+
+    def perceive(
+        self, kind: str, text: str, speaker: str | None = None, significant: bool = False
+    ) -> None:
+        entry = self.ctx.add(kind, text, speaker=speaker)  # type: ignore[arg-type]
+        self._perceived(entry.id, kind, text, speaker=speaker)
+        self._echo(f'  [{entry.id}] {speaker}: "{text}"' if speaker else f"  [{entry.id}] {text}")
+        if significant:
+            self._update_stance()
+
+    def suggest(self, choice: Choice) -> tuple[Decision, str]:
+        """Shadow mode: decide what the character would pick, without it becoming a fact
+        (the operator plays; `record_pick` stores what was really picked)."""
+        if choice.timed and self.decider.stance is None:
+            self._update_stance()
+        self._events.emit(
+            "choice.presented", source="env", payload=choice.model_dump() | {"mode": "shadow"}
+        )
+        self._choices_seen.append(
+            f"{choice.prompt} options: {'  '.join(o.label for o in choice.options)}".strip()
+        )
+        self._refresh_memory()
+        decision = self.decider.decide(choice, self.ctx)
+        label = next(o.label for o in choice.options if o.id == decision.option_id)
+        self._events.emit(
+            "decision.made",
+            source="cognition",
+            payload=decision.model_dump()
+            | {"label": label, "directive": self.directive.name, "mode": "shadow"},
+        )
+        self._echo(f"  => SUGGESTION: {label}  [{_describe(decision)}]")
+        if decision.reasoning:
+            self._echo(f"     {decision.reasoning}")
+            self._check("decision", f"decision-{choice.id}", decision.reasoning)
+        return decision, label
+
+    def record_pick(self, label: str) -> None:
+        """What the operator actually picked: this is what the character did."""
+        self.ctx.add("decision", f"I chose: {label}")
+        self._update_stance()
+
+    def finish(self) -> None:
+        self._events.emit("scene.finished", source="env", payload={"scenario": self.scenario.id})
+        self._audit_scene()
+        self._end_of_scene()
+
+    def begin(self) -> None:
         s = self.scenario
         self._events.emit(
             "scene.started",
@@ -148,29 +211,6 @@ class ScenarioRunner:
         self._echo(f"== {s.title} ({s.character}) · directive: {self.directive.name} ==")
         if self.memory.items:
             self._echo(f"   (remembers {len(self.memory.items)} earlier scene(s))")
-
-        for step in s.steps:
-            if step.when is not None and not self._condition_met(step.when):
-                continue
-            if isinstance(step, ObservationStep):
-                entry = self.ctx.add("observation", step.text)
-                self._perceived(entry.id, "observation", step.text)
-                self._echo(f"  [{entry.id}] {step.text}")
-                if step.significant:
-                    self._update_stance()
-            elif isinstance(step, DialogueStep):
-                entry = self.ctx.add("dialogue", step.text, speaker=step.speaker)
-                self._perceived(entry.id, "dialogue", step.text, speaker=step.speaker)
-                self._echo(f'  [{entry.id}] {step.speaker}: "{step.text}"')
-                if step.significant:
-                    self._update_stance()
-            elif isinstance(step, ChoiceStep):
-                self._play_choice(step)
-
-        self._events.emit("scene.finished", source="env", payload={"scenario": s.id})
-        self._audit_scene()
-        self._end_of_scene()
-        return [d for d, _ in self._decisions]
 
     # -- memory ----------------------------------------------------------------
 
@@ -231,6 +271,14 @@ class ScenarioRunner:
         self.campaign.save(character)
 
     def _reflect(self, report: SceneReport) -> None:
+        if self.operator_controlled:
+            self._events.emit(
+                "personality.skipped",
+                source="memory",
+                payload={"reason": "the operator made the choices (shadow mode)"},
+            )
+            self._echo("  ## Personality unchanged: the operator made the choices")
+            return
         if not self.directive.shapes_personality:
             self._events.emit(
                 "personality.skipped",

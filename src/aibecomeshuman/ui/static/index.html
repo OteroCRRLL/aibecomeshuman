@@ -111,6 +111,7 @@
 </header>
 <nav id="tabs">
   <button data-tab="play" class="active">Play</button>
+  <button data-tab="live">Live</button>
   <button data-tab="recordings">Recordings</button>
   <button data-tab="runs">Runs</button>
   <button data-tab="memory">Memory</button>
@@ -143,6 +144,34 @@
       <div class="error" id="play-error"></div>
     </div>
     <div class="transcript" id="live"></div>
+  </section>
+
+  <section id="live">
+    <div class="card">
+      <h2>Shadow mode: you play, the AI suggests</h2>
+      <p class="hint">The AI watches the game through OBS (Tools → WebSocket Server Settings → enable;
+        the password goes in <code>.env</code> as <code>OBS_WEBSOCKET_PASSWORD</code>; the game capture
+        source name is <code>[live] obs_source</code> in <code>config/default.toml</code>). Pick a
+        recording instead to test without the game.</p>
+      <div class="grid">
+        <div><label for="live-source">Source</label><select id="live-source"></select></div>
+        <div><label for="live-profile">Run profile</label><select id="live-profile"></select></div>
+        <div><label for="live-character">Protagonist</label><select id="live-character"></select></div>
+        <div><label for="live-campaign">Campaign (optional)</label>
+          <input id="live-campaign" class="text-in" placeholder="e.g. shadow-test" autocomplete="off"></div>
+        <div id="live-rec-opts"><label for="live-speed">Recording speed · start (mm:ss)</label>
+          <div style="display:flex;gap:6px"><input id="live-speed" class="text-in" value="1" style="width:70px">
+          <input id="live-from" class="text-in" placeholder="00:00"></div></div>
+      </div>
+      <div class="row">
+        <button class="btn" id="live-start">▶ Start watching</button>
+        <button class="btn" id="live-stop" disabled style="background:var(--bad)">■ Stop</button>
+        <span class="hint" id="live-state"></span>
+      </div>
+      <div class="error" id="live-error"></div>
+    </div>
+    <div class="card" id="live-suggestion" style="display:none"></div>
+    <div class="transcript" id="live-view"></div>
   </section>
 
   <section id="recordings">
@@ -379,6 +408,18 @@ function makeRenderer(container) {
       case "personality.failed":
         container.append(el("div", { class: "ev fail" }, `${ev.type}: ${p.error}`));
         break;
+      case "shadow.started":
+        container.append(el("div", { class: "ev scene" }, `Watching ${p.source} · ${p.character}`));
+        break;
+      case "shadow.suggestion":
+        container.append(el("div", { class: "ev stance" }, el("div", { class: "tag" },
+          `Suggestion · ${p.seconds_after_menu} s after the menu appeared${p.source === "fallback" ? " · fallback" : ""}`),
+          el("strong", {}, `${p.button} ${p.suggested}`), el("div", { class: "hint" }, p.reasoning || "")));
+        break;
+      case "shadow.compare":
+        container.append(el("div", { class: "ev " + (p.agreed ? "memory" : "banner") },
+          `You picked ${p.picked || "(not seen)"} · the AI suggested ${p.suggested || "—"} · ${p.agreed ? "same" : "different"}`));
+        break;
       case "guard.flag":
         container.append(el("div", { class: "ev banner" },
           `Guard: the ${p.kind} uses ${p.terms.join(", ")} without having met it`,
@@ -542,6 +583,88 @@ async function showMemory() {
 $("mem-campaign").addEventListener("change", loadCampaign);
 $("mem-character").addEventListener("change", showMemory);
 document.querySelector('#tabs button[data-tab="memory"]').addEventListener("click", loadCampaign);
+
+// -- live tab --------------------------------------------------------------------------
+async function loadLive() {
+  const keep = $("live-source").value;
+  const files = await api("/api/recordings");
+  $("live-source").replaceChildren(
+    el("option", { value: "obs" }, "OBS (the game, live)"),
+    el("option", { value: "screen" }, "Whole screen (monitor 1)"),
+    el("optgroup", { label: "Test with a recording" }, files.map((f) => el("option", { value: f.file }, f.file))));
+  if (keep) $("live-source").value = keep;
+  if (OPTIONS) {
+    fillSelect($("live-profile"), OPTIONS.profiles.map((p) => [p.name, p.name + (p.locked ? " 🔒" : "")]),
+      $("live-profile").value || "default");
+    onLiveProfileChange();
+  }
+  onLiveSourceChange();
+}
+function onLiveProfileChange() {
+  const prof = OPTIONS.profiles.find((p) => p.name === $("live-profile").value);
+  if (prof) fillSelect($("live-character"), prof.characters.map((c) => [c, c]), $("live-character").value || prof.characters[0]);
+}
+function onLiveSourceChange() {
+  const v = $("live-source").value;
+  $("live-rec-opts").style.display = v === "obs" || v.startsWith("screen") ? "none" : "block";
+}
+$("live-profile").addEventListener("change", onLiveProfileChange);
+$("live-source").addEventListener("change", onLiveSourceChange);
+document.querySelector('#tabs button[data-tab="live"]').addEventListener("click", loadLive);
+
+$("live-start").addEventListener("click", async () => {
+  $("live-error").textContent = "";
+  $("live-start").disabled = true;
+  $("live-state").textContent = "Starting…";
+  const render = makeRenderer($("live-view"));
+  const big = $("live-suggestion");
+  big.style.display = "none";
+  let cost = 0, frames = 0;
+  try {
+    const { job_id } = await api("/api/live/start", { method: "POST", body: JSON.stringify({
+      source: $("live-source").value, profile: $("live-profile").value, character: $("live-character").value,
+      campaign: $("live-campaign").value.trim() || null,
+      speed: parseFloat($("live-speed").value) || 1, start: $("live-from").value.trim() || null,
+    }) });
+    $("live-stop").disabled = false;
+    let after = 0;
+    while (true) {
+      const job = await api(`/api/jobs/${job_id}?after=${after}`);
+      after = job.next;
+      for (const ev of job.events) {
+        render(ev);
+        if (ev.type === "llm.call" && ev.payload.ok) cost += ev.payload.cost_usd || 0;
+        if (ev.type === "perception.observed") frames += 1;
+        if (ev.type === "shadow.suggestion") {
+          big.style.display = "block";
+          big.replaceChildren(el("div", { class: "hint" }, "The AI would pick"),
+            el("div", { style: "font-size:32px;font-weight:700;margin:4px 0" }, `${ev.payload.button} ${ev.payload.suggested}`),
+            el("div", {}, ev.payload.reasoning || ""));
+        }
+      }
+      if (job.status === "running") {
+        $("live-state").textContent = `Watching… ${frames} frames read · ${usd(cost)}`;
+        $("live-view").lastElementChild?.scrollIntoView({ block: "nearest" });
+      } else {
+        $("live-state").textContent = `Stopped (${job.status}) · ${usd(cost)}`;
+        if (job.error) $("live-error").textContent = job.error;
+        break;
+      }
+      await new Promise((r) => setTimeout(r, 500));
+    }
+  } catch (e) {
+    $("live-error").textContent = e.message;
+    $("live-state").textContent = "";
+  } finally {
+    $("live-start").disabled = false;
+    $("live-stop").disabled = true;
+    loadStatus();
+  }
+});
+$("live-stop").addEventListener("click", async () => {
+  $("live-state").textContent = "Stopping (saving memory)…";
+  await api("/api/live/stop", { method: "POST", body: "{}" });
+});
 
 // -- recordings tab ---------------------------------------------------------------
 const mmss = (t) => `${String(Math.floor(t / 60)).padStart(2, "0")}:${String(Math.floor(t % 60)).padStart(2, "0")}`;

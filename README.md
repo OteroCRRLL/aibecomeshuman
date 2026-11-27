@@ -16,7 +16,9 @@ Architecture and decisions: [docs/architecture.md](docs/architecture.md).
 
 ## Status
 
-**Phase 4, anti-metagaming guard.** Everything the agent writes is checked for words and
+**Phase 5, shadow mode.** You play; the AI watches the game live through OBS and
+suggests every choice (about 4 s after the menu appears), then compares with what you
+picked. **Phase 4, anti-metagaming guard.** Everything the agent writes is checked for words and
 facts it never met (a free word list plus a cheap judge model); personality changes whose
 reasons did not happen are rejected; `aibh eval` measures it on canary scenes.
 **Phase 3, perception from recordings.** The agent turns a game recording into what it
@@ -33,7 +35,7 @@ ready.
 | 2 | Memory and personality (campaigns, chains of scenes) | ✅ |
 | 3 | Offline perception (recordings) | ✅ |
 | 4 | Anti-metagaming guard and evaluations | ✅ |
-| 5 | Shadow-mode control (the AI suggests, you execute) | |
+| 5 | Shadow-mode control (the AI suggests, you execute) | ✅ |
 | 6 | Live autonomy | |
 | 7 | Overlay and OBS | |
 | 8 | Multi-model arena | |
@@ -98,6 +100,19 @@ uv run aibh play runs/<folder>/scenario.toml                     # the AI plays 
 The run folder gets `transcript.md` (what the agent knows), the keyframes, every
 observation, a draft `scenario.toml`, and `evaluation.json` when the recording has a
 `<file>.labels.toml` with hand-made labels next to it.
+
+Shadow mode (you play, the AI suggests). Setup once: in OBS, *Tools → WebSocket Server
+Settings → Enable*, copy the password into `.env` as `OBS_WEBSOCKET_PASSWORD`, and set
+`[live] obs_source` in `config/default.toml` to the name of your game capture source.
+
+```powershell
+uv run aibh shadow --campaign mi-partida                 # watch the game through OBS
+uv run aibh shadow --source screen                      # or grab the whole monitor
+uv run aibh shadow --source <recording>.mkv --from 07:50  # test without the game
+```
+
+Or use the **Live** tab in the control panel. Stop with Ctrl+C (or the Stop button): the
+scene's memory is saved. Chapters end (and memory is saved) when the flowchart appears.
 
 Anti-metagaming evaluation (canary scenes in `evals/`, ~$0.012 with Haiku):
 

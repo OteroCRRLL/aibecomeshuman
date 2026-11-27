@@ -100,6 +100,27 @@ recording -> keyframes (local, free) -> observer (vision model, one frame each)
   lines with speakers, and texts that must never reach the agent. First mission:
   10/10 choices, 8/8 picks, 19/19 lines, 14–15/15 speakers, 0 leaks.
 
+## Shadow mode (phase 5)
+
+```
+OBS / screen / recording --(2 fps, local signals)--> keyframes
+   menu keyframes -> dedicated observer worker -> suggestion right away
+   other keyframes -> 3 observer workers -> in order: redaction -> transcript -> character
+```
+
+- Frames come from OBS's WebSocket screenshot of the game capture source (`[live]`), from a
+  monitor, or from a recording played on the wall clock (testing without the game).
+- The character is the same `ScenarioRunner` used for scripted scenes, fed live through
+  `perceive` / `suggest` / `record_pick` / `finish`. Suggestions use the stance + fast
+  model path for timed menus, with the countdown measured from the frame's capture.
+- What the operator picked is worked out from the protagonist's next line (shared words),
+  then a highlighted option, then a cheap text-only guess; it is stored as what the
+  character did. Memory is kept; the personality does not learn from the operator's picks.
+- The end-of-chapter flowchart (never shown to the agent) closes the scene: audit, memory.
+- First test (the recorded negotiation, real time, Haiku): every menu caught, suggestion
+  ~4 s after the menu appears (one fallback at 9 s), the operator's pick identified in
+  6 of 7 checked menus, ~$0.12 for 4 minutes.
+
 ## Anti-metagaming
 
 1. **Perception** (phase 3): the agent only gets text; menus, the flowchart, tutorial

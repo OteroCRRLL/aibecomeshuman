@@ -18,6 +18,19 @@ warn_ratio = 0.8
 # Seconds kept free, out of a timed choice's countdown, to actually press the button.
 execution_margin_s = 1.0
 
+[live]
+# OBS WebSocket (OBS: Tools -> WebSocket Server Settings -> Enable WebSocket server).
+# The password goes in .env as OBS_WEBSOCKET_PASSWORD.
+obs_host = "localhost"
+obs_port = 4455
+# The game capture source's name in OBS, exactly as in the Sources list.
+obs_source = "Detroit"
+frames_per_s = 2.0
+workers = 3
+# Assumed countdown for timed choices (the game's timer bar is not read yet).
+timed_choice_s = 6.0
+stance_every = 6
+
 [perception]
 # Game recordings (never committed).
 recordings_dir = "data/recordings"

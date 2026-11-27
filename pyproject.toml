@@ -13,6 +13,8 @@ dependencies = [
     "uvicorn>=0.32",
     "numpy>=2.0",
     "opencv-python-headless>=4.10",
+    "mss>=9.0",
+    "obsws-python>=1.7",
 ]
 
 [project.scripts]

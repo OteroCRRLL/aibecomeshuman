@@ -89,6 +89,17 @@ class PerceiveRequest(BaseModel):
     rebuild_from: str | None = None
 
 
+class LiveRequest(BaseModel):
+    # "obs", "screen", "screen:2", or a file in the recordings folder (for testing).
+    source: str = "obs"
+    profile: str = "default"
+    character: str = "connor"
+    campaign: str | None = None
+    speed: float = 1.0
+    start: str | None = None
+    unlock_premium: bool = False
+
+
 class BudgetUpdate(BaseModel):
     project_cap_usd: float
     run_cap_usd: float
@@ -113,7 +124,7 @@ def create_app(root: Path | None = None) -> FastAPI:
     env_file = project_root / ".env"
     app = FastAPI(title="aibecomeshuman", docs_url=None, redoc_url=None)
     jobs: dict[str, Job] = {}
-    active: dict[str, Job | None] = {"job": None}
+    active: dict[str, Any] = {"job": None, "stop": None}
 
     def refresh_env() -> None:
         # Re-read .env every time, so a key added or changed later works without a restart.
@@ -325,7 +336,9 @@ def create_app(root: Path | None = None) -> FastAPI:
             decisions = 0
             if events_path.is_file():
                 for event in read_events(events_path):
-                    if event.type == "scene.started" and scene is None:
+                    if event.type == "shadow.started" and scene is None:
+                        scene = f"Live (shadow): {event.payload.get('source')}"
+                    elif event.type == "scene.started" and scene is None:
                         scene = event.payload.get("title")
                     elif event.type == "perception.started" and scene is None:
                         dry = " (dry run)" if event.payload.get("dry_run") else ""
@@ -428,6 +441,44 @@ def create_app(root: Path | None = None) -> FastAPI:
                 finish_outputs(s, video, result, req.character, start, end)
 
         return start_job(session, work)
+
+    # -- live (shadow mode) ---------------------------------------------------------
+
+    @app.post("/api/live/start")
+    def live_start(req: LiveRequest) -> dict[str, str]:
+        from aibecomeshuman.live.shadow import ShadowSession
+        from aibecomeshuman.live.sources import build_source
+        from aibecomeshuman.perception.video import VIDEO_SUFFIXES, parse_time
+
+        refresh_env()
+        p = project()
+        campaign = (req.campaign or "").strip() or None
+        spec = req.source
+        if Path(spec).suffix.lower() in VIDEO_SUFFIXES:
+            spec = str(recording_path(spec))  # only files inside the recordings folder
+        elif spec != "obs" and not re.fullmatch(r"screen(:\d)?", spec):
+            raise HTTPException(400, "source must be obs, screen or a recording")
+        try:
+            if campaign:
+                check_campaign_name(campaign)
+            session = RunSession(p, req.profile, unlock_premium=req.unlock_premium)
+            source = build_source(spec, p, speed=req.speed, start_s=parse_time(req.start) or 0.0)
+        except (ConfigError, ValueError) as e:
+            raise HTTPException(400, str(e)) from e
+        stop = threading.Event()
+        active["stop"] = stop
+
+        def work(s: RunSession) -> None:
+            ShadowSession(s, source, req.character, campaign=campaign, stop=stop).run()
+
+        return start_job(session, work)
+
+    @app.post("/api/live/stop")
+    def live_stop() -> dict[str, bool]:
+        stop = active.get("stop")
+        if stop is not None:
+            stop.set()
+        return {"stopping": stop is not None}
 
     @app.get("/api/runs/{run_id}/perception")
     def run_perception(run_id: str) -> dict[str, Any]:
