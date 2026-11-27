@@ -248,7 +248,6 @@ class ShadowSession:
                 menu_repeat_s=lambda: 1.0 if self._menu_unread() else MENU_REPEAT_S,
             )
             pending: list[tuple] = []  # frames waiting to go to the observer together
-            last_menu_kf = -1e9
 
             def flush() -> None:
                 if pending:
