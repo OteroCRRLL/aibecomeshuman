@@ -213,7 +213,7 @@ assets). It grows with the project:
 | Phase 2 ✅ | Chains and campaigns in Play; Memory tab with personality evolution |
 | Phase 3 ✅ | Recordings tab: analyse a recording, transcript with thumbnails, score |
 | Phases 5–6 | Live control: modes, kill switch, directive hot-swap |
-| Phase 7 | OBS overlay (another page served by the same app) |
+| Phase 7 ✅ | OBS overlay `/overlay` (browser source, transparent): stance, suggestion, match score; added to OBS from the Live tab |
 
 Rules: config files stay the source of truth; every edit is validated against the whole
 project and rolled back if invalid; only one run plays at a time; API keys never reach

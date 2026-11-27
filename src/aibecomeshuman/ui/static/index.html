@@ -165,6 +165,11 @@
           <div style="display:flex;gap:6px"><input id="live-speed" class="text-in" value="1" style="width:70px">
           <input id="live-from" class="text-in" placeholder="00:00"></div></div>
       </div>
+      <div class="row">
+        <button class="btn" id="obs-overlay" style="background:var(--stance)">Add overlay to OBS</button>
+        <a href="/overlay?demo=1" target="_blank" class="hint">preview the overlay (example)</a>
+        <span class="hint" id="obs-msg"></span>
+      </div>
       <div class="error" id="live-error"></div>
     </div>
     <!-- Stays on screen while the transcript grows below. -->
@@ -680,6 +685,15 @@ $("live-start").addEventListener("click", async () => {
     $("live-start").disabled = false;
     $("live-stop").disabled = true;
     loadStatus();
+  }
+});
+$("obs-overlay").addEventListener("click", async () => {
+  $("obs-msg").textContent = "…";
+  try {
+    const r = await api("/api/obs/overlay", { method: "POST", body: "{}" });
+    $("obs-msg").textContent = r.message;
+  } catch (e) {
+    $("obs-msg").textContent = e.message;
   }
 });
 $("live-stop").addEventListener("click", async () => {

@@ -38,6 +38,8 @@ API_KEY_VAR = "ANTHROPIC_API_KEY"
 LOCAL_HOSTS = {"127.0.0.1", "localhost", "::1", "testserver"}
 
 JobStatus = Literal["running", "ok", "error"]
+# Name of the overlay's browser source in OBS.
+OVERLAY_SOURCE = "aibecomeshuman overlay"
 
 
 class Job:
@@ -480,7 +482,50 @@ def create_app(root: Path | None = None) -> FastAPI:
                 chapter=req.chapter,
             ).run()
 
-        return start_job(session, work)
+        started = start_job(session, work)
+        active["live_job"] = started["job_id"]
+        return started
+
+    @app.get("/overlay", include_in_schema=False)
+    def overlay() -> FileResponse:
+        return FileResponse(STATIC / "overlay.html")
+
+    @app.get("/api/live/current")
+    def live_current() -> dict[str, Any]:
+        """The live job the OBS overlay should follow (the latest one started)."""
+        job_id = active.get("live_job")
+        job = jobs.get(job_id) if job_id else None
+        return {"job_id": job_id if job else None, "running": bool(job and job.status == "running")}
+
+    @app.post("/api/obs/overlay")
+    def add_overlay_to_obs(request: Request) -> dict[str, Any]:
+        """Add the overlay to OBS's current scene as a browser source (once)."""
+        refresh_env()
+        live = project().app.live
+        url = f"http://127.0.0.1:{request.url.port or 8765}/overlay"
+        try:
+            import obsws_python as obsws
+
+            client = obsws.ReqClient(
+                host=live.obs_host, port=live.obs_port,
+                password=os.environ.get("OBS_WEBSOCKET_PASSWORD", ""), timeout=5,
+            )
+        except Exception as e:
+            raise HTTPException(502, f"cannot connect to OBS: {e}") from e
+        try:
+            names = [i["inputName"] for i in client.get_input_list().inputs]
+            if OVERLAY_SOURCE in names:
+                return {"added": False, "message": f"'{OVERLAY_SOURCE}' is already in OBS"}
+            scene = client.get_current_program_scene().current_program_scene_name
+            client.create_input(
+                scene, OVERLAY_SOURCE, "browser_source",
+                {"url": url, "width": 1920, "height": 1080, "reroute_audio": True}, True,
+            )
+            return {"added": True, "message": f"added to scene '{scene}'"}
+        except Exception as e:
+            raise HTTPException(502, f"OBS refused: {e}") from e
+        finally:
+            client.disconnect()
 
     @app.post("/api/live/stop")
     def live_stop() -> dict[str, bool]:

@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>aibecomeshuman overlay</title>
+<!--
+  OBS browser source (1920x1080, transparent). Follows the latest live session started
+  from the control panel and shows what the AI thinks: its stance, its suggestion when a
+  menu appears, and whether it matched the operator's pick. Viewer-facing text is Spanish.
+-->
+<style>
+  :root {
+    --card: rgba(12, 16, 24, 0.82); --line: rgba(120, 170, 255, 0.35);
+    --text: #eef3fb; --muted: #9fb0c8; --accent: #5aa2ff;
+    --ok: #4cd38a; --bad: #ff6b61;
+    --Y: #f5c518; --X: #3d8bfd; --B: #ff4d4d; --A: #3ccf6e; --stick: #c7d2e3;
+  }
+  html, body { margin: 0; background: transparent; overflow: hidden; }
+  body { width: 1920px; height: 1080px; position: relative; color: var(--text);
+         font: 22px/1.35 "Segoe UI", system-ui, sans-serif; }
+  #panel { position: absolute; left: 40px; bottom: 270px; width: 560px;
+           display: flex; flex-direction: column; gap: 10px;
+           transition: opacity .6s; opacity: 0; }
+  #panel.on { opacity: 1; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px;
+          padding: 14px 18px; box-shadow: 0 6px 24px rgba(0,0,0,.35); backdrop-filter: blur(3px); }
+  .head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+  .who { font-weight: 800; letter-spacing: .08em; text-transform: uppercase; font-size: 20px; }
+  .who .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%;
+              background: var(--accent); margin-right: 8px; box-shadow: 0 0 10px var(--accent); }
+  .score { color: var(--muted); font-size: 18px; white-space: nowrap; }
+  .score b { color: var(--text); }
+  .chapter { color: var(--muted); font-size: 16px; margin-top: 2px; }
+  .label { color: var(--muted); font-size: 15px; text-transform: uppercase; letter-spacing: .1em; }
+  #stance { font-style: italic; color: #d6e2f5; font-size: 20px;
+            display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+  #choice { display: none; }
+  #choice.on { display: block; animation: pop .35s ease-out; }
+  .pick { display: flex; align-items: center; gap: 14px; margin: 6px 0 8px; }
+  .btn { min-width: 46px; height: 46px; border-radius: 50%; display: grid; place-items: center;
+         font-weight: 900; font-size: 24px; color: #0b0f16; }
+  .opt { font-size: 34px; font-weight: 800; letter-spacing: .02em; line-height: 1.1; }
+  .why { color: #cfdaeb; font-size: 19px;
+         display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+  .thinking { color: var(--accent); font-weight: 700; animation: pulse 1s infinite; }
+  .result { display: flex; gap: 10px; align-items: center; font-size: 20px; margin-top: 6px; }
+  .result .tag { padding: 2px 10px; border-radius: 999px; font-weight: 800; font-size: 16px; }
+  .same { background: rgba(76, 211, 138, .2); color: var(--ok); }
+  .diff { background: rgba(255, 107, 97, .18); color: var(--bad); }
+  @keyframes pop { from { transform: translateY(12px); opacity: 0; } to { transform: none; opacity: 1; } }
+  @keyframes pulse { 50% { opacity: .4; } }
+</style>
+</head>
+<body>
+<div id="panel">
+  <div class="card">
+    <div class="head">
+      <div class="who"><span class="dot"></span><span id="who">IA</span></div>
+      <div class="score" id="score"></div>
+    </div>
+    <div class="chapter" id="chapter"></div>
+  </div>
+  <div class="card" id="stance-card" style="display:none">
+    <div class="label">Lo que piensa</div>
+    <div id="stance"></div>
+  </div>
+  <div class="card" id="choice"></div>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const state = { job: null, after: 0, agreed: 0, compared: 0, hideTimer: null };
+
+function el(tag, cls, text) {
+  const n = document.createElement(tag);
+  if (cls) n.className = cls;
+  if (text !== undefined) n.textContent = text;
+  return n;
+}
+function buttonBadge(button) {
+  const b = el("div", "btn", button === "stick" ? "↕" : button || "?");
+  b.style.background = `var(--${["Y", "X", "B", "A"].includes(button) ? button : "stick"})`;
+  return b;
+}
+function reset() {
+  Object.assign(state, { after: 0, agreed: 0, compared: 0 });
+  $("score").textContent = "";
+  $("chapter").textContent = "";
+  $("stance-card").style.display = "none";
+  $("choice").className = "card";
+}
+function showChoice(...children) {
+  clearTimeout(state.hideTimer);
+  const c = $("choice");
+  c.replaceChildren(...children);
+  c.className = "card";
+  void c.offsetWidth;  // restart the animation
+  c.className = "card on";
+}
+function hideChoiceLater(ms) {
+  clearTimeout(state.hideTimer);
+  state.hideTimer = setTimeout(() => { $("choice").className = "card"; }, ms);
+}
+
+function handle(ev) {
+  const p = ev.payload;
+  switch (ev.type) {
+    case "shadow.chapter":
+      $("who").textContent = `IA · ${p.character}`;
+      $("chapter").textContent = p.title ? `Capítulo ${p.chapter} · ${p.title}` : `Capítulo ${p.chapter}`;
+      break;
+    case "stance.updated":
+      $("stance").textContent = p.stance;
+      $("stance-card").style.display = "block";
+      break;
+    case "choice.presented":
+      showChoice(el("div", "label", "Elección"), el("div", "thinking", "Pensando…"));
+      break;
+    case "shadow.suggestion": {
+      const pick = el("div", "pick");
+      pick.append(buttonBadge(p.button), el("div", "opt", p.suggested));
+      showChoice(el("div", "label", "La IA elegiría"), pick, el("div", "why", p.reasoning || ""));
+      break;
+    }
+    case "shadow.compare": {
+      if (!p.picked || !p.suggested) break;
+      state.compared += 1;
+      if (p.agreed) state.agreed += 1;
+      $("score").replaceChildren("Coincide contigo ", el("b", "", `${state.agreed}/${state.compared}`));
+      const res = el("div", "result");
+      res.append(el("span", "tag " + (p.agreed ? "same" : "diff"), p.agreed ? "IGUAL" : "DISTINTO"),
+                 el("span", "", `Tú: ${p.picked} · IA: ${p.suggested}`));
+      $("choice").append(res);
+      hideChoiceLater(9000);
+      break;
+    }
+  }
+}
+
+// `/overlay?demo=1`: example content, to place and size the source in OBS without playing.
+const DEMO = [
+  { type: "shadow.chapter", payload: { chapter: 1, title: "El rehén", character: "connor" } },
+  { type: "stance.updated", payload: { stance: "Mantendré la calma y no haré movimientos bruscos. Primero debo ganarme su confianza para que baje el arma." } },
+  { type: "shadow.suggestion", payload: { button: "Y", suggested: "CALMADO", reasoning: "Con un 56% de probabilidad de éxito, lo primero es no escalar: necesito que Daniel se mantenga estable." } },
+  { type: "shadow.compare", payload: { picked: "EMPATIZAR", suggested: "CALMADO", agreed: false } },
+];
+
+async function poll() {
+  try {
+    const cur = await (await fetch("/api/live/current")).json();
+    if (cur.job_id && cur.job_id !== state.job) {
+      state.job = cur.job_id;
+      reset();
+    }
+    $("panel").classList.toggle("on", !!cur.running);
+    if (state.job) {
+      const job = await (await fetch(`/api/jobs/${state.job}?after=${state.after}`)).json();
+      state.after = job.next;
+      job.events.forEach(handle);
+    }
+  } catch (e) { /* panel restarting: try again */ }
+  setTimeout(poll, 500);
+}
+if (new URLSearchParams(location.search).has("demo")) {
+  DEMO.forEach(handle);
+  clearTimeout(state.hideTimer);
+  $("panel").classList.add("on");
+} else {
+  poll();
+}
+</script>
+</body>
+</html>

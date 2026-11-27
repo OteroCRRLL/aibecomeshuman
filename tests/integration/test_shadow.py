@@ -157,6 +157,10 @@ def test_live_tab_runs_a_recording(project_dir: Path) -> None:
     job = wait_for(client, res.json()["job_id"])
     assert job["status"] == "ok", job["error"]
     assert any(e["type"] == "shadow.finished" for e in job["all_events"])
+    # The OBS overlay follows the latest live session.
+    assert "overlay" in client.get("/overlay").text
+    current = client.get("/api/live/current").json()
+    assert current == {"job_id": res.json()["job_id"], "running": False}
     assert client.post("/api/live/stop", json={}).json() == {"stopping": True}
     bad = client.post("/api/live/start", json={"source": "../.env", "profile": "offline"})
     assert bad.status_code == 400

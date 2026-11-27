@@ -37,7 +37,7 @@ ready.
 | 4 | Anti-metagaming guard and evaluations | ✅ |
 | 5 | Shadow-mode control (the AI suggests, you execute) | ✅ |
 | 6 | Live autonomy | |
-| 7 | Overlay and OBS | |
+| 7 | Overlay and OBS | ✅ (done before 6, to watch the AI while testing) |
 | 8 | Multi-model arena | |
 
 ## Getting started
@@ -110,6 +110,11 @@ uv run aibh shadow --campaign mi-partida                 # watch the game throug
 uv run aibh shadow --source screen                      # or grab the whole monitor
 uv run aibh shadow --source <recording>.mkv --from 07:50  # test without the game
 ```
+
+OBS overlay: in the **Live** tab, *Add overlay to OBS* adds a transparent browser source
+(`http://127.0.0.1:8765/overlay`) to the current scene. It shows the AI's stance, its
+suggestion when a menu appears, and whether it matched your pick. `/overlay?demo=1` shows
+example content for placing it. The AI never sees the overlay: it reads the game source.
 
 Or use the **Live** tab in the control panel. Stop with Ctrl+C (or the Stop button): the
 scene's memory is saved. Chapters end (and memory is saved) when the flowchart appears.
