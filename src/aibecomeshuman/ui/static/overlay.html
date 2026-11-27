@@ -22,6 +22,10 @@
            display: flex; flex-direction: column; gap: 10px;
            transition: opacity .6s; opacity: 0; }
   #panel.on { opacity: 1; }
+  /* No live session: only the header, dimmed, as a placeholder to position the source. */
+  #panel.idle #stance-card, #panel.idle #choice { display: none !important; }
+  #panel.idle .card { opacity: .7; }
+  #panel.idle .who .dot { background: var(--muted); box-shadow: none; }
   .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px;
           padding: 14px 18px; box-shadow: 0 6px 24px rgba(0,0,0,.35); backdrop-filter: blur(3px); }
   .head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
@@ -152,7 +156,10 @@ async function poll() {
       state.job = cur.job_id;
       reset();
     }
-    $("panel").classList.toggle("on", !!cur.running);
+    // Always visible (so it can be placed in OBS); idle until a live session runs.
+    $("panel").classList.add("on");
+    $("panel").classList.toggle("idle", !cur.running);
+    if (!cur.running) $("chapter").textContent = "En espera";
     if (state.job) {
       const job = await (await fetch(`/api/jobs/${state.job}?after=${state.after}`)).json();
       state.after = job.next;
