@@ -23,7 +23,6 @@ import numpy as np
 from aibecomeshuman.config import ConfigError
 from aibecomeshuman.perception.video import open_video
 
-
 # How long OBS may have no picture (game starting, alt-tab) before giving up.
 NO_PICTURE_LIMIT_S = 30.0
 
