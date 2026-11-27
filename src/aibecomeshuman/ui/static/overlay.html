@@ -22,6 +22,8 @@
          font: 300 22px/1.35 "Segoe UI", "Segoe UI Light", system-ui, sans-serif; }
   #panel { position: absolute; left: 48px; bottom: 270px; width: 560px;
            display: flex; flex-direction: column; gap: 12px; }
+  /* `/overlay?pos=center`: centred horizontally (fits a 9:16 crop of the middle). */
+  #panel.center { left: 50%; transform: translateX(-50%); }
 
   /* Analysis-display frames: glass, a hairline border and corner brackets. */
   .frame { position: relative; background: var(--glass); border: 1px solid var(--line-soft);
@@ -204,6 +206,9 @@ const DEMO = [
   { type: "shadow.suggestion", payload: { button: "Y", suggested: "Calmado", reasoning: "Con un 56% de éxito, lo primero es no escalar la situación." } },
   { type: "autonomy.pressed", payload: { label: "Calmado" } },
 ];
+if (new URLSearchParams(location.search).get("pos") === "center") {
+  $("panel").classList.add("center");
+}
 if (new URLSearchParams(location.search).has("demo")) {
   DEMO.forEach(handle);
   clearTimeout(state.hideTimer);
