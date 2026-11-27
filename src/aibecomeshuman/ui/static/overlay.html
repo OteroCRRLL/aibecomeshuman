@@ -68,6 +68,19 @@
   .status.done { color: var(--blue); }
   .status.wait { color: var(--muted); }
 
+  /* End of a chapter: the character's traits, bars moving from the old value to the new. */
+  #traits { display: none; }
+  #traits.on { display: block; animation: reveal .5s ease-out; }
+  .trait { display: grid; grid-template-columns: 250px 1fr 56px; gap: 12px; align-items: center;
+           margin-top: 9px; font-size: 15px; letter-spacing: .05em; text-transform: uppercase;
+           white-space: nowrap; }
+  .bar { position: relative; height: 8px; background: rgba(120, 190, 255, .12); }
+  .bar .fill { position: absolute; left: 0; top: 0; bottom: 0; background: var(--blue);
+               box-shadow: 0 0 10px var(--blue); transition: width 2.4s cubic-bezier(.2,.8,.2,1); }
+  .bar .was { position: absolute; top: -4px; bottom: -4px; width: 2px; background: #fff; opacity: .55; }
+  .delta { text-align: right; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .delta.up { color: #4cd38a; } .delta.down { color: var(--red); } .delta.same { color: var(--muted); }
+  #panel.traits-on #stance-frame, #panel.traits-on #choice { display: none !important; }
   #panel.idle #stance-frame, #panel.idle #choice { display: none !important; }
   #panel.idle .frame { opacity: .75; }
   @keyframes reveal { from { clip-path: inset(0 100% 0 0); } to { clip-path: inset(0 0 0 0); } }
@@ -92,6 +105,7 @@
     <div id="stance"></div>
   </div>
   <div class="frame" id="choice"></div>
+  <div class="frame" id="traits"></div>
 </div>
 
 <script>
@@ -129,6 +143,45 @@ function hideChoiceLater(ms) {
   state.hideTimer = setTimeout(() => { $("choice").className = "frame"; }, ms);
 }
 function addStatus(cls, text) { $("choice").append(el("div", "status " + cls, text)); }
+
+// Trait names as the viewers read them.
+const TRAITS = {
+  obedience: "Obediencia", empathy: "Empatía", social_adaptability: "Adaptación social",
+  impulsiveness: "Impulsividad", trust_in_humans: "Confianza en humanos",
+  self_preservation: "Autoconservación", self_curiosity: "Curiosidad por sí mismo",
+  protectiveness: "Protección", patience: "Paciencia",
+};
+function showTraits(p) {
+  const old = {};
+  for (const c of p.changes || []) old[c.trait] = c.old;
+  const rows = Object.entries(p.traits || {}).map(([name, value]) => {
+    const before = name in old ? old[name] : value;
+    const diff = Math.round((value - before) * 10) / 10;
+    const fill = el("div", "fill");
+    fill.style.width = `${before * 10}%`;
+    const was = el("div", "was");
+    was.style.left = `${before * 10}%`;
+    const bar = el("div", "bar");
+    bar.append(fill, was);
+    const delta = el("div", "delta " + (diff > 0 ? "up" : diff < 0 ? "down" : "same"),
+                     diff > 0 ? `+${diff}` : diff < 0 ? `${diff}` : "=");
+    const row = el("div", "trait");
+    row.append(el("div", "", TRAITS[name] || name.replaceAll("_", " ")), bar, delta);
+    setTimeout(() => { fill.style.width = `${value * 10}%`; }, 700);  // the bar moves
+    return row;
+  });
+  const t = $("traits");
+  t.replaceChildren(el("div", "label", `Evolución · ${$("who").textContent}`), ...rows);
+  t.className = "frame";
+  void t.offsetWidth;
+  t.className = "frame on";
+  $("panel").classList.add("traits-on");
+  clearTimeout(state.traitsTimer);
+  state.traitsTimer = setTimeout(() => {
+    t.className = "frame";
+    $("panel").classList.remove("traits-on");
+  }, 25000);
+}
 
 function handle(ev) {
   const p = ev.payload;
@@ -169,6 +222,10 @@ function handle(ev) {
       addStatus("done", "▸ Ejecutado");
       hideChoiceLater(7000);
       break;
+    case "personality.updated":
+    case "personality.unchanged":
+      if (!state.replaying) showTraits(p);
+      break;
     case "autonomy.skipped":
       addStatus("wait", p.reason.includes("operator") ? "Mando del jugador" : "No ejecutado");
       hideChoiceLater(7000);
@@ -185,8 +242,11 @@ async function poll() {
     }
     if (state.job) {
       const job = await (await fetch(`/api/jobs/${state.job}?after=${state.after}`)).json();
+      // The first read of a session replays its past: no animations for old events.
+      state.replaying = state.after === 0;
       state.after = job.next;
       job.events.forEach(handle);
+      state.replaying = false;
     }
     // Always visible (to place it in OBS); idle when no live session runs.
     $("panel").classList.toggle("idle", !cur.running);
@@ -209,8 +269,15 @@ const DEMO = [
 if (new URLSearchParams(location.search).get("pos") === "center") {
   $("panel").classList.add("center");
 }
-if (new URLSearchParams(location.search).has("demo")) {
+const DEMO_TRAITS = { type: "personality.updated", payload: {
+  traits: { obedience: 8.0, empathy: 3.0, social_adaptability: 8.0, impulsiveness: 2.0,
+            trust_in_humans: 4.5, self_preservation: 2.0, self_curiosity: 2.0 },
+  changes: [{ trait: "obedience", old: 9.0 }, { trait: "empathy", old: 2.0 },
+            { trait: "trust_in_humans", old: 5.0 }, { trait: "self_curiosity", old: 1.0 }] } };
+const demo = new URLSearchParams(location.search).get("demo");
+if (demo !== null) {
   DEMO.forEach(handle);
+  if (demo === "traits") handle(DEMO_TRAITS);  // /overlay?demo=traits: the chapter-end view
   clearTimeout(state.hideTimer);
   $("panel").classList.remove("idle");
 } else {

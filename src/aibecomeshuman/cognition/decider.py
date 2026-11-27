@@ -128,6 +128,8 @@ DECIDE_TASK = (
 
 FAST_TASK = (
     "Time is running out. Pick the option that best fits your current stance. "
+    "The options act on what the choice's prompt says they are about; the last thing you "
+    "heard may be about something else. "
     "In `reasoning`, give one short sentence of at most 15 words."
 )
 
