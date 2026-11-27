@@ -279,13 +279,10 @@ class ShadowSession:
                     # lane. Re-reads of a menu already read go in the normal batches.
                     if not self._menu_unread():
                         self._urgent_first_t = kf.t  # a new attempt to read a menu
-                    last_menu_kf = kf.t
                     self._urgent_menu_t = kf.t
                     flush()
                     menu_lane.submit(self._observe, *frame)
                     continue
-                if kf.reason == "menu":
-                    last_menu_kf = kf.t
                 pending.append(frame)
                 if (
                     len(pending) >= self.live.batch_frames
