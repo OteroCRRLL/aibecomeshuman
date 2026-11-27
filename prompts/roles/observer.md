@@ -43,6 +43,8 @@ Choices:
 - `choice`: options the player can pick right now. They are short labels, each next to a
   coloured button letter (Y yellow, X blue, B red, A green), or circular prompts moved
   with the stick (button `stick`). Copy labels exactly, without brackets.
+- `direction` (stick prompts only): where the prompt's arrow points: `up`, `down`,
+  `left`, `right`, or `other` for circles, half-turns or anything else. Empty for buttons.
 - `about`: what or whom the options refer to, from what is on screen: stick prompts sit
   next to an object or person ("the fish on the floor"); dialogue options answer someone
   ("answering the man holding the girl"). Short and concrete.

@@ -7,7 +7,7 @@ kept, so the paid model sees a few hundred frames instead of every second of vid
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -200,9 +200,12 @@ def select_keyframes(
     frames: Iterator[tuple[float, np.ndarray]],
     settings: PerceptionSettings,
     subtitle_trigger: bool = True,
+    menu_repeat_s: Callable[[], float] | None = None,
 ) -> Iterator[Keyframe]:
     """`subtitle_trigger` False when subtitles are read some other way (local OCR): a new
-    subtitle then no longer sends a frame to the observer."""
+    subtitle then no longer sends a frame to the observer.
+    `menu_repeat_s`: how often to re-send a menu that is still up (live play asks for
+    every second while the menu has not been read yet, so a countdown is not wasted)."""
     """Keep the frames where a menu shows up, the picture or the subtitles changed, plus a
     heartbeat. While a menu is on screen, a frame every 2 s (to see which option is picked)."""
     last_thumb: np.ndarray | None = None
@@ -218,7 +221,10 @@ def select_keyframes(
         reason = None
         if last_thumb is None:
             reason = "first"
-        elif menu >= MENU_MIN and (last_menu < MENU_MIN or t - last_sent >= MENU_REPEAT_S):
+        elif menu >= MENU_MIN and (
+            last_menu < MENU_MIN
+            or t - last_sent >= (menu_repeat_s() if menu_repeat_s else MENU_REPEAT_S)
+        ):
             reason = "menu"
         elif subtitle_trigger and last_subs is not None and new_subtitle(subs, last_subs):
             reason = "subtitles"

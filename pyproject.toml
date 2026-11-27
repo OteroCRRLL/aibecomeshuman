@@ -15,6 +15,8 @@ dependencies = [
     "opencv-python-headless>=4.10",
     "mss>=9.0",
     "obsws-python>=1.7",
+    # Virtual Xbox controller for autonomous play (needs the ViGEmBus driver).
+    "vgamepad>=0.1; sys_platform == 'win32'",
     # Windows OCR (free subtitle reading); not needed elsewhere.
     "winrt-runtime>=2.0; sys_platform == 'win32'",
     "winrt-Windows.Media.Ocr>=2.0; sys_platform == 'win32'",

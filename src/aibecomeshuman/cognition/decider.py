@@ -108,25 +108,27 @@ STANCE_TASK = (
     "Update your stance for this scene. If nothing important has happened since your "
     "previous stance, set `changed` to false and copy the previous stance as it is. "
     "Otherwise set `changed` to true and, in `stance`, write what you intend to do next and "
-    "why, as your own intention in this situation (never as a rule you were given), in one "
-    "or two short sentences, at most 40 words. If your directive overrides your "
+    "why, as your own intention in this situation (never as a rule you were given), in ONE "
+    "short sentence of at most 20 words. If your directive overrides your "
     "personality, the stance must describe what you will actually do under it, as a "
     "concrete intention, not what you would do without it. Do not retell the scene or "
     "repeat your previous stance. In `approach_keywords`, give 3 to 6 short words, in the "
     "same language as the on-screen text, describing the kind of option you will pick next "
-    "(e.g. calma, ayudar, obedecer). In `concerns`, list at most three short worries."
+    "(e.g. calma, ayudar, obedecer). In `concerns`, list at most two worries of a few "
+    "words each."
 )
 
 DECIDE_TASK = (
-    "Choose one option. In `reasoning`, explain your choice in character, in two to four "
-    "sentences. In `evidence`, list the ids that justify it: events from this scene "
+    "Choose one option. In `reasoning`, explain your choice in character in ONE short "
+    "sentence of at most 25 words. In `evidence`, list the ids that justify it: events "
+    "from this scene "
     "(E1, E2...) and, if they matter, recollections or promises from your memory "
     "(M1, C1...). In `confidence`, give a number from 0 to 1."
 )
 
 FAST_TASK = (
     "Time is running out. Pick the option that best fits your current stance. "
-    "In `reasoning`, give one short sentence."
+    "In `reasoning`, give one short sentence of at most 15 words."
 )
 
 

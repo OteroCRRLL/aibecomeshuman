@@ -29,7 +29,8 @@ frames_per_s = 2.0
 workers = 3
 # Assumed countdown for timed choices (the game's timer bar is not read yet).
 timed_choice_s = 6.0
-stance_every = 12
+# Refresh the stance after this many new things seen (it is always refreshed after a pick).
+stance_every = 25
 # Key action moments are re-read by the stronger observer, up to this spend per chapter.
 strong_cap_per_chapter_usd = 0.15
 # Read subtitles on this PC with the free Windows OCR (Spanish) instead of the vision model.
@@ -38,6 +39,10 @@ subtitles_ocr = false
 # Frames sent to the observer together in one call (cheaper); menus always go alone.
 batch_frames = 3
 batch_wait_s = 4.0
+# Autonomous mode (the AI presses the buttons): a short pause before untimed choices, and
+# the AI never presses if your own controller was used in the last `operator_grace_s`.
+press_delay_s = 0.8
+operator_grace_s = 1.5
 
 [perception]
 # Game recordings (never committed).

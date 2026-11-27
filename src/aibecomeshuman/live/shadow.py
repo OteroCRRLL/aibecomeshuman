@@ -22,6 +22,7 @@ from dataclasses import dataclass, field
 
 from aibecomeshuman.cognition.decider import Choice, Option
 from aibecomeshuman.env.scenario import ObservationStep, Scenario
+from aibecomeshuman.live.pad import BUTTONS, DIRECTIONS, OperatorWatch, Pad, VirtualPad
 from aibecomeshuman.live.sources import FrameSource, SourceLost
 from aibecomeshuman.llm.types import LLMError, LLMRequest, Message
 from aibecomeshuman.perception.escalate import Escalator
@@ -41,6 +42,7 @@ from aibecomeshuman.perception.transcript import (
     similar,
 )
 from aibecomeshuman.perception.video import (
+    MENU_REPEAT_S,
     encode_jpeg,
     fmt_time,
     select_keyframes,
@@ -57,6 +59,8 @@ MENU, ITEM, CHAPTER_END = 0, 1, 1  # queue priorities: menus first
 PICK_LINES = 3
 # A menu keyframe this long after the previous one is a new menu: urgent, sent alone.
 MENU_URGENT_GAP_S = 8.0
+# While a menu is up but unread, re-send a frame every second for at most this long.
+UNREAD_MENU_RETRY_S = 6.0
 
 SPEAKER_SYSTEM = (
     "You say who speaks a subtitle line in a scene. The protagonist is {protagonist}. Use "
@@ -106,6 +110,7 @@ class ShadowReport:
     observed: int = 0
     failed: int = 0
     suggestions: int = 0
+    pressed: int = 0
     compared: int = 0
     agreed: int = 0
     scenes: int = 0
@@ -118,6 +123,7 @@ class _Suggestion:
     suggested: str
     buttons: dict[str, str]
     t: float = 0.0  # when the menu was first seen
+    pressed: str = ""  # autonomous mode: the option the agent actually pressed
 
 
 class ShadowSession:
@@ -130,12 +136,19 @@ class ShadowSession:
         echo: Echo | None = None,
         stop: threading.Event | None = None,
         chapter: int | None = None,
+        autonomous: bool = False,
+        pad: Pad | None = None,
     ) -> None:
         """`character` None = the protagonist of the chapter's briefing (connor if none).
-        `chapter` None = continue where the campaign left off."""
+        `chapter` None = continue where the campaign left off.
+        `autonomous`: the agent presses the buttons itself (a virtual controller, or `pad`)."""
         assert session.events is not None and session.dir is not None
         self.session = session
         self.source = source
+        self.autonomous = autonomous
+        self.pad = pad
+        self.paused = False
+        self.watch: OperatorWatch | None = None
         self.fixed_character = character is not None
         self.character = character or "connor"
         self.say = echo or (lambda _: None)
@@ -186,16 +199,38 @@ class ShadowSession:
         self._last_menu_t = -1e9
         self._last_no_menu_t = -1e9
         self._on_hidden_screen = False
+        self._urgent_menu_t = -1e9  # last menu frame sent urgently (video time)
+        self._urgent_first_t = -1e9  # first urgent frame of the current reading attempt
+        self._runner: ScenarioRunner | None = None  # the current scene's character
+        self._decide_lock = threading.Lock()
+        self._choice_n = 0
 
     # -- main loop ----------------------------------------------------------------
+
+    def toggle_pause(self) -> None:
+        """Operator: give / take back control (panel button, or hold View on the controller)."""
+        self.paused = not self.paused
+        if self.pad is not None:
+            self.pad.release_all()
+        self.events.emit("autonomy.paused" if self.paused else "autonomy.resumed",
+                         source="operator", payload={})
+        self.say("  !! AI paused: you have the controls" if self.paused
+                 else "  !! AI resumed: it answers the menus")
 
     def run(self) -> ShadowReport:
         self.events.emit(
             "shadow.started",
             source="live",
             payload={"source": self.source.name, "character": self.character,
-                     "campaign": self.campaign.name},
+                     "campaign": self.campaign.name, "autonomous": self.autonomous},
         )
+        if self.autonomous:
+            if self.pad is None:
+                self.pad = VirtualPad()
+            index = getattr(self.pad, "index", None)
+            self.watch = OperatorWatch(index, self.toggle_pause).start()
+            self.events.emit("autonomy.started", source="live",
+                             payload={"virtual_index": index})
         agent = threading.Thread(target=self._agent_loop, daemon=True)
         agent.start()
         pool = ThreadPoolExecutor(max_workers=self.live.workers)
@@ -208,7 +243,10 @@ class ShadowSession:
             frames = self._until_stopped(self.source.frames(1.0 / self.live.frames_per_s))
             if reader is not None:
                 frames = self._read_subtitles(frames, reader, seqs)
-            keyframes = select_keyframes(frames, self.settings, subtitle_trigger=reader is None)
+            keyframes = select_keyframes(
+                frames, self.settings, subtitle_trigger=reader is None,
+                menu_repeat_s=lambda: 1.0 if self._menu_unread() else MENU_REPEAT_S,
+            )
             pending: list[tuple] = []  # frames waiting to go to the observer together
             last_menu_kf = -1e9
 
@@ -231,11 +269,18 @@ class ShadowSession:
                     ]
                 in_burst = bool(self.escalator and self.escalator.note_keyframe(kf.t, kf.reason))
                 frame = (seq, kf.t, name, jpeg, ctx, earlier, time.monotonic(), in_burst)
-                if kf.reason == "menu" and kf.t - last_menu_kf > MENU_URGENT_GAP_S:
-                    # A menu that just appeared can't wait: send what is pending (the lines
-                    # just before it), then the menu on its own lane. Re-reads of a menu
-                    # already up (the operator thinking) go in the normal batches.
+                # Urgent unless a menu was actually READ moments ago (false alarms from the
+                # local detector, like neon lights, must not make a real menu wait).
+                if kf.reason == "menu" and (
+                    kf.t - self._last_menu_t > MENU_URGENT_GAP_S or self._menu_unread()
+                ):
+                    # A menu that just appeared (or is up but not read yet) can't wait: send
+                    # what is pending (the lines just before it), then the menu on its own
+                    # lane. Re-reads of a menu already read go in the normal batches.
+                    if not self._menu_unread():
+                        self._urgent_first_t = kf.t  # a new attempt to read a menu
                     last_menu_kf = kf.t
+                    self._urgent_menu_t = kf.t
                     flush()
                     menu_lane.submit(self._observe, *frame)
                     continue
@@ -257,10 +302,23 @@ class ShadowSession:
                 reader.close()
             pool.shutdown(wait=True)
             menu_lane.shutdown(wait=True)
+            if self.watch is not None:
+                self.watch.stop()
+            if self.pad is not None:
+                self.pad.release_all()
+                self.pad.close()
             self._agent_queue.put((ITEM + 1, next(self._order), ("end", None)))
             agent.join()
             self.events.emit("shadow.finished", source="live", payload=self.report.__dict__)
         return self.report
+
+    def _menu_unread(self) -> bool:
+        """A menu was sent urgently but no observation has read a menu since: keep trying,
+        for a few seconds at most (the local detector can mistake neon for button letters)."""
+        return (
+            self._urgent_menu_t > self._last_menu_t
+            and self._urgent_menu_t - self._urgent_first_t < UNREAD_MENU_RETRY_S
+        )
 
     def _until_stopped(self, frames):
         for item in frames:
@@ -400,8 +458,24 @@ class ShadowSession:
             self._suggested.append(_Suggestion(labels, "", {}, visible.t))
         buttons = {o.label.strip(): o.button for o in visible.choice.options}
         # The countdown started when the frame was captured, not when it was read.
-        payload = (labels, buttons, visible.choice.timed, captured_at, visible.choice.about)
-        self._agent_queue.put((MENU, next(self._order), ("menu", payload)))
+        directions = {o.label.strip(): o.direction for o in visible.choice.options}
+        payload = (labels, buttons, visible.choice.timed, captured_at, visible.choice.about,
+                   directions)
+        # Decide right away on a thread of its own: the character's usual queue may be busy
+        # (a stance update, a speaker guess) and a countdown is running.
+        threading.Thread(target=self._decide_now, args=(payload,), daemon=True).start()
+
+    def _decide_now(self, payload: tuple) -> None:
+        for _ in range(40):  # the first scene is being set up (at most ~2 s)
+            if self._runner is not None:
+                break
+            time.sleep(0.05)
+        with self._decide_lock:  # one menu at a time
+            self._choice_n += 1
+            try:
+                self._suggest(self._runner, self._choice_n, *payload)
+            except Exception as e:  # keep playing even if one decision fails
+                self.events.emit("shadow.error", source="live", payload={"error": repr(e)})
 
     @staticmethod
     def _overlaps(a: list[str], b: list[str]) -> bool:
@@ -439,8 +513,11 @@ class ShadowSession:
             self.session, scenario, echo=self.say, campaign=self.campaign,
             briefing=briefing.text if briefing else "",
         )
-        runner.operator_controlled = True
+        # Shadow mode: the operator's picks are not the agent's, so its personality does not
+        # learn from them. Autonomous mode: the agent picks, and grows from it.
+        runner.operator_controlled = not self.autonomous
         runner.begin()
+        self._runner = runner
         return runner
 
     def _agent_loop(self) -> None:
@@ -448,7 +525,6 @@ class ShadowSession:
         since_stance = 0
         pending: TranscriptItem | None = None
         after_pick: list[TranscriptItem] = []
-        choice_n = 0
         heard: list[str] = []  # last lines with their speakers, for attributing new ones
         while True:
             _, _, (kind, payload) = self._agent_queue.get()
@@ -466,10 +542,6 @@ class ShadowSession:
                     if self.escalator is not None:
                         self.escalator.new_chapter()
                     runner = self._new_runner()
-                    continue
-                if kind == "menu":
-                    choice_n += 1
-                    self._suggest(runner, choice_n, *payload)
                     continue
                 item: TranscriptItem = payload
                 if item.kind == "choice":
@@ -527,7 +599,9 @@ class ShadowSession:
             item.speaker_basis = "conversation"
         return answer or "unknown"
 
-    def _suggest(self, runner, n, labels, buttons, timed, seen_at, about="") -> None:
+    def _suggest(
+        self, runner, n, labels, buttons, timed, seen_at, about="", directions=None
+    ) -> None:
         elapsed = time.monotonic() - seen_at
         seconds = max(1.5, self.live.timed_choice_s - elapsed) if timed else None
         choice = Choice(
@@ -552,6 +626,44 @@ class ShadowSession:
                      "reasoning": decision.reasoning, "source": decision.source,
                      "seconds_after_menu": round(time.monotonic() - seen_at, 1)},
         )
+        if self.autonomous and match is not None:
+            self._press(match, label, button, (directions or {}).get(label, ""), timed, seen_at)
+
+    def _press(self, suggestion, label, button, direction, timed, seen_at) -> None:
+        """Autonomous mode: carry out the decision on the virtual controller, unless the
+        operator is in control (paused, or using their own controller since the menu)."""
+        def skip(reason: str) -> None:
+            self.events.emit("autonomy.skipped", source="live",
+                             payload={"label": label, "reason": reason})
+            self.say(f"  !! not pressing {label}: {reason}")
+
+        if self.paused:
+            return skip("paused by the operator")
+        if self.watch is not None and self.watch.active_within(
+            time.monotonic() - seen_at + self.live.operator_grace_s
+        ):
+            return skip("the operator is using their controller")
+        if button not in BUTTONS and not (button == "stick" and direction in DIRECTIONS):
+            return skip(f"unknown control ({button} {direction})".strip())
+        if not timed:
+            time.sleep(self.live.press_delay_s)
+            if self.paused or (self.watch is not None and self.watch.active_within(
+                    self.live.press_delay_s)):
+                return skip("the operator took over")
+        assert self.pad is not None
+        if button in BUTTONS:
+            self.pad.press(button)
+        else:
+            self.pad.tilt(direction)
+        suggestion.pressed = label
+        self.report.pressed += 1
+        self.events.emit(
+            "autonomy.pressed",
+            source="live",
+            payload={"label": label, "button": button, "direction": direction,
+                     "seconds_after_menu": round(time.monotonic() - seen_at, 1)},
+        )
+        self.say(f"  >> pressed {button if button in BUTTONS else 'stick ' + direction}: {label}")
 
     def _resolve_pick(self, runner, choice_item: TranscriptItem, after: list) -> None:
         """Work out what the operator picked, and how sure we are.
@@ -561,11 +673,16 @@ class ShadowSession:
         A guess is only tried if the protagonist says something afterwards (silent
         actions, like picking up an object, give it nothing to go on)."""
         labels = [o.label for o in choice_item.options]
+        suggestion = self._suggestion_at(choice_item.t, labels)
+        suggested = suggestion.suggested if suggestion else ""
         highlighted = choice_item.chosen
         probe = choice_item.model_copy(update={"chosen": ""})
         infer_picks([probe, *after])
         picked, basis, sure = probe.chosen, "words", bool(probe.chosen)
-        if not picked:
+        if suggestion is not None and suggestion.pressed:
+            # The agent pressed it itself: no guessing.
+            picked, basis, sure = suggestion.pressed, "pressed", True
+        elif not picked:
             protagonist = self.character.lower()
             spoke = [i for i in after if protagonist in i.speaker.lower()]
             guess = guess_pick(self.session.llm("observer"), choice_item, after) if spoke else ""
@@ -576,7 +693,6 @@ class ShadowSession:
                 picked = highlighted or guess
                 basis, sure = ("highlight" if highlighted else "guess"), False
         choice_item.chosen = picked
-        suggested = self._suggestion_at(choice_item.t, labels)
         if picked:
             runner.record_pick(picked, choice_item.about)
             self.ctx.just_chosen = picked
@@ -591,7 +707,9 @@ class ShadowSession:
             # None = we could not tell for sure what the operator picked.
             "agreed": same if (sure and suggested) else None,
         }
-        if comparison["agreed"] is not None:
+        if basis == "pressed":
+            comparison["agreed"] = None  # its own press: nothing to compare with the operator
+        elif comparison["agreed"] is not None:
             self.report.compared += 1
             self.report.agreed += same
         self.report.comparisons.append(comparison)
@@ -600,12 +718,12 @@ class ShadowSession:
         self.say(f"  -- you picked {picked or '(not seen)'}; suggested {suggested or '-'} "
                  f"({verdict})")
 
-    def _suggestion_at(self, t: float, labels: list[str]) -> str:
+    def _suggestion_at(self, t: float, labels: list[str]) -> _Suggestion | None:
         """The suggestion made for the menu that was up at time `t` (menus with the same
         options come back, e.g. questions left after one is asked: time tells them apart)."""
         with self._lock:
             candidates = [s for s in self._suggested if s.suggested and
                           self._overlaps(s.labels, labels)]
         if not candidates:
-            return ""
-        return min(candidates, key=lambda s: abs(s.t - t)).suggested
+            return None
+        return min(candidates, key=lambda s: abs(s.t - t))

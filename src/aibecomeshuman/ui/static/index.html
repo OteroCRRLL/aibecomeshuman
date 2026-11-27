@@ -175,7 +175,10 @@
     <!-- Stays on screen while the transcript grows below. -->
     <div class="card live-bar">
       <div class="row" style="margin-top:0">
+        <label style="margin:0;display:flex;gap:6px;align-items:center;color:var(--text);font-size:14px">
+          <input type="checkbox" id="live-auto"> AI presses the buttons</label>
         <button class="btn" id="live-start">▶ Start watching</button>
+        <button class="btn" id="live-pause" disabled style="background:var(--warn)">⏸ Pause AI</button>
         <button class="btn" id="live-stop" disabled style="background:var(--bad)">■ Stop</button>
         <span class="hint" id="live-state"></span>
       </div>
@@ -422,6 +425,19 @@ function makeRenderer(container) {
       case "shadow.started":
         container.append(el("div", { class: "ev scene" }, `Watching ${p.source} · ${p.character}`));
         break;
+      case "autonomy.started":
+        container.append(el("div", { class: "ev banner" }, "The AI presses the buttons (hold View on your controller 1 s, or use Pause AI, to take over)"));
+        break;
+      case "autonomy.pressed":
+        container.append(el("div", { class: "ev memory" }, `AI pressed ${p.button === "stick" ? "stick " + p.direction : p.button}: ${p.label} (${p.seconds_after_menu} s after the menu)`));
+        break;
+      case "autonomy.skipped":
+        container.append(el("div", { class: "ev banner" }, `AI did not press ${p.label}: ${p.reason}`));
+        break;
+      case "autonomy.paused":
+      case "autonomy.resumed":
+        container.append(el("div", { class: "ev banner" }, ev.type === "autonomy.paused" ? "AI paused: you have the controls" : "AI resumed: it answers the menus"));
+        break;
       case "shadow.chapter":
         container.append(el("div", { class: "ev scene" },
           `Chapter ${p.chapter}${p.title ? ": " + p.title : ""} · ${p.character}`,
@@ -649,10 +665,13 @@ $("live-start").addEventListener("click", async () => {
       source: $("live-source").value, profile: $("live-profile").value,
       character: $("live-character").value || null,
       chapter: $("live-chapter").value ? parseInt($("live-chapter").value) : null,
+      autonomous: $("live-auto").checked,
       campaign: $("live-campaign").value.trim() || null,
       speed: parseFloat($("live-speed").value) || 1, start: $("live-from").value.trim() || null,
     }) });
     $("live-stop").disabled = false;
+    $("live-pause").disabled = !$("live-auto").checked;
+    $("live-pause").textContent = "⏸ Pause AI";
     let after = 0;
     while (true) {
       const job = await api(`/api/jobs/${job_id}?after=${after}`);
@@ -687,7 +706,16 @@ $("live-start").addEventListener("click", async () => {
   } finally {
     $("live-start").disabled = false;
     $("live-stop").disabled = true;
+    $("live-pause").disabled = true;
     loadStatus();
+  }
+});
+$("live-pause").addEventListener("click", async () => {
+  try {
+    const r = await api("/api/live/pause", { method: "POST", body: "{}" });
+    $("live-pause").textContent = r.paused ? "▶ Give control to AI" : "⏸ Pause AI";
+  } catch (e) {
+    $("live-error").textContent = e.message;
   }
 });
 $("obs-overlay").addEventListener("click", async () => {

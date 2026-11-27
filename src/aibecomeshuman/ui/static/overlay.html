@@ -35,6 +35,8 @@
   .score { color: var(--muted); font-size: 18px; white-space: nowrap; }
   .score b { color: var(--text); }
   .chapter { color: var(--muted); font-size: 16px; margin-top: 2px; }
+  .mode { color: var(--accent); font-size: 15px; font-weight: 800; letter-spacing: .12em; }
+  .mode:empty { display: none; }
   .label { color: var(--muted); font-size: 15px; text-transform: uppercase; letter-spacing: .1em; }
   #stance { font-style: italic; color: #d6e2f5; font-size: 20px;
             display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
@@ -64,6 +66,7 @@
       <div class="score" id="score"></div>
     </div>
     <div class="chapter" id="chapter"></div>
+    <div class="mode" id="mode"></div>
   </div>
   <div class="card" id="stance-card" style="display:none">
     <div class="label">Lo que piensa</div>
@@ -88,7 +91,8 @@ function buttonBadge(button) {
   return b;
 }
 function reset() {
-  Object.assign(state, { after: 0, agreed: 0, compared: 0 });
+  Object.assign(state, { after: 0, agreed: 0, compared: 0, autonomous: false });
+  $("mode").textContent = "";
   $("score").textContent = "";
   $("chapter").textContent = "";
   $("stance-card").style.display = "none";
@@ -110,6 +114,30 @@ function hideChoiceLater(ms) {
 function handle(ev) {
   const p = ev.payload;
   switch (ev.type) {
+    case "shadow.started":
+      state.autonomous = !!p.autonomous;
+      $("mode").textContent = state.autonomous ? "IA AL MANDO" : "";
+      break;
+    case "autonomy.paused":
+      $("mode").textContent = "EN PAUSA · juegas tú";
+      break;
+    case "autonomy.resumed":
+      $("mode").textContent = "IA AL MANDO";
+      break;
+    case "autonomy.pressed": {
+      const res = el("div", "result");
+      res.append(el("span", "tag same", "PULSADO"), el("span", "", p.label));
+      $("choice").append(res);
+      hideChoiceLater(7000);
+      break;
+    }
+    case "autonomy.skipped": {
+      const res = el("div", "result");
+      res.append(el("span", "tag unsure", "NO PULSA"), el("span", "", p.reason.includes("operator")
+        ? "Tienes tú el mando" : "No sabe cómo pulsarlo"));
+      $("choice").append(res);
+      break;
+    }
     case "shadow.chapter":
       $("who").textContent = `IA · ${p.character}`;
       $("chapter").textContent = p.title ? `Capítulo ${p.chapter} · ${p.title}` : `Capítulo ${p.chapter}`;
@@ -124,11 +152,12 @@ function handle(ev) {
     case "shadow.suggestion": {
       const pick = el("div", "pick");
       pick.append(buttonBadge(p.button), el("div", "opt", p.suggested));
-      showChoice(el("div", "label", "La IA elegiría"), pick, el("div", "why", p.reasoning || ""));
+      showChoice(el("div", "label", state.autonomous ? "La IA elige" : "La IA elegiría"), pick,
+                 el("div", "why", p.reasoning || ""));
       break;
     }
     case "shadow.compare": {
-      if (!p.suggested) break;
+      if (!p.suggested || p.picked_by === "pressed") break;  // its own press: nothing to compare
       const res = el("div", "result");
       if (p.agreed === null || p.agreed === undefined) {
         // Not sure what the operator picked: say so, and keep it out of the score.

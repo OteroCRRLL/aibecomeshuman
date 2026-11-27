@@ -59,11 +59,16 @@ OBSERVATION_SCHEMA = {
                         "type": "object",
                         "properties": {
                             "button": {"type": "string", "enum": list(Button.__args__)},
+                            "direction": {
+                                "type": "string",
+                                "enum": ["", "up", "down", "left", "right", "other"],
+                                "description": "stick prompts only: the arrow's direction",
+                            },
                             "label": _STR,
                             "locked": {"type": "boolean"},
                             "highlighted": {"type": "boolean"},
                         },
-                        "required": ["button", "label", "locked", "highlighted"],
+                        "required": ["button", "direction", "label", "locked", "highlighted"],
                         "additionalProperties": False,
                     },
                 },
@@ -116,6 +121,7 @@ class SubtitleLine(BaseModel):
 
 class SeenOption(BaseModel):
     button: Button = "other"
+    direction: str = ""  # stick prompts: up / down / left / right / other
     label: str
     locked: bool = False
     highlighted: bool = False

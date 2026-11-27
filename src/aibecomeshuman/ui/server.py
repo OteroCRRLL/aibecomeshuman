@@ -101,6 +101,8 @@ class LiveRequest(BaseModel):
     speed: float = 1.0
     start: str | None = None
     unlock_premium: bool = False
+    # The AI presses the buttons itself (virtual controller).
+    autonomous: bool = False
 
 
 class BudgetUpdate(BaseModel):
@@ -127,7 +129,7 @@ def create_app(root: Path | None = None) -> FastAPI:
     env_file = project_root / ".env"
     app = FastAPI(title="aibecomeshuman", docs_url=None, redoc_url=None)
     jobs: dict[str, Job] = {}
-    active: dict[str, Any] = {"job": None, "stop": None}
+    active: dict[str, Any] = {"job": None, "stop": None, "shadow": None}
 
     def refresh_env() -> None:
         # Re-read .env every time, so a key added or changed later works without a restart.
@@ -477,10 +479,15 @@ def create_app(root: Path | None = None) -> FastAPI:
         active["stop"] = stop
 
         def work(s: RunSession) -> None:
-            ShadowSession(
+            shadow = ShadowSession(
                 s, source, req.character or None, campaign=campaign, stop=stop,
-                chapter=req.chapter,
-            ).run()
+                chapter=req.chapter, autonomous=req.autonomous,
+            )
+            active["shadow"] = shadow
+            try:
+                shadow.run()
+            finally:
+                active["shadow"] = None
 
         started = start_job(session, work)
         active["live_job"] = started["job_id"]
@@ -526,6 +533,15 @@ def create_app(root: Path | None = None) -> FastAPI:
             raise HTTPException(502, f"OBS refused: {e}") from e
         finally:
             client.disconnect()
+
+    @app.post("/api/live/pause")
+    def live_pause() -> dict[str, Any]:
+        """Give / take back control from the AI (autonomous mode)."""
+        shadow = active.get("shadow")
+        if shadow is None or not shadow.autonomous:
+            raise HTTPException(409, "no autonomous session is running")
+        shadow.toggle_pause()
+        return {"paused": shadow.paused}
 
     @app.post("/api/live/stop")
     def live_stop() -> dict[str, bool]:

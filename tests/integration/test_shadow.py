@@ -10,6 +10,7 @@ from fastapi.testclient import TestClient
 
 from aibecomeshuman.config import ProjectConfig
 from aibecomeshuman.core.events import read_events
+from aibecomeshuman.live.pad import RecordingPad
 from aibecomeshuman.live.shadow import ShadowSession
 from aibecomeshuman.live.sources import RecordingSource, SourceLost
 from aibecomeshuman.perception.observer import (
@@ -94,6 +95,35 @@ def test_shadow_stops_on_request(project: ProjectConfig, tmp_path: Path) -> None
     assert report.keyframes == 0
 
 
+def test_autonomous_mode_presses_its_choice(project: ProjectConfig, clip) -> None:
+    pad = RecordingPad()
+    with RunSession(project, "offline") as session:
+        shadow = ShadowSession(session, RecordingSource(clip, speed=2), "connor",
+                               autonomous=True, pad=pad)
+        shadow.observer = ScriptedObserver()
+        shadow.run()
+    events = list(read_events(session.dir / "events.jsonl"))
+    suggestion = next(e for e in events if e.type == "shadow.suggestion").payload
+    pressed = next(e for e in events if e.type == "autonomy.pressed").payload
+    assert pad.actions == [suggestion["button"]] and pressed["label"] == suggestion["suggested"]
+    compare = next(e for e in events if e.type == "shadow.compare").payload
+    # Its own press: known for sure, and not compared with the operator.
+    assert compare["picked_by"] == "pressed" and compare["agreed"] is None
+    assert compare["picked"] == suggestion["suggested"]
+
+
+def test_paused_autonomy_does_not_press(project: ProjectConfig, clip) -> None:
+    pad = RecordingPad()
+    with RunSession(project, "offline") as session:
+        shadow = ShadowSession(session, RecordingSource(clip, speed=2), "connor",
+                               autonomous=True, pad=pad)
+        shadow.observer = ScriptedObserver()
+        shadow.toggle_pause()
+        shadow.run()
+    types = [e.type for e in read_events(session.dir / "events.jsonl")]
+    assert pad.actions == [] and "autonomy.skipped" in types and "autonomy.paused" in types
+
+
 def test_picks_are_compared_with_the_suggestion_of_that_moment(
     project: ProjectConfig, tmp_path
 ) -> None:
@@ -106,8 +136,9 @@ def test_picks_are_compared_with_the_suggestion_of_that_moment(
             _Suggestion(["NOMBRE", "COMPORTAMIENTO", "CÓDIGO"], "NOMBRE", {}, 150.0),
             _Suggestion(["COMPORTAMIENTO", "CÓDIGO"], "COMPORTAMIENTO", {}, 166.0),
         ]
-        assert shadow._suggestion_at(152.0, ["NOMBRE", "COMPORTAMIENTO", "CÓDIGO"]) == "NOMBRE"
-        assert shadow._suggestion_at(168.0, ["COMPORTAMIENTO", "CÓDIGO"]) == "COMPORTAMIENTO"
+        first = shadow._suggestion_at(152.0, ["NOMBRE", "COMPORTAMIENTO", "CÓDIGO"])
+        second = shadow._suggestion_at(168.0, ["COMPORTAMIENTO", "CÓDIGO"])
+        assert first.suggested == "NOMBRE" and second.suggested == "COMPORTAMIENTO"
 
 
 class ClosingGame:

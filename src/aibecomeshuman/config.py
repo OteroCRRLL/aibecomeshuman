@@ -112,7 +112,7 @@ class LiveSettings(_Strict):
     # The game's countdown is not readable; assume this much time for a timed choice.
     timed_choice_s: float = Field(default=6.0, gt=0)
     # Update the stance after this many new things perceived (lines, notices).
-    stance_every: int = Field(default=12, ge=1)
+    stance_every: int = Field(default=25, ge=1)
     # Key action moments (fast changes, no dialogue, something dramatic) are read again by
     # the `observer_strong` model, up to this much spend per game chapter.
     strong_cap_per_chapter_usd: float = Field(default=0.15, ge=0)
@@ -123,6 +123,10 @@ class LiveSettings(_Strict):
     # and the longest a frame waits for company before being sent anyway.
     batch_frames: int = Field(default=3, ge=1, le=6)
     batch_wait_s: float = Field(default=4.0, gt=0)
+    # Autonomous mode: pause before pressing an untimed choice (a human-looking beat), and
+    # how recently the operator's own controller must have been idle for the agent to press.
+    press_delay_s: float = Field(default=0.8, ge=0)
+    operator_grace_s: float = Field(default=1.5, ge=0)
 
 
 class AppConfig(_Strict):
