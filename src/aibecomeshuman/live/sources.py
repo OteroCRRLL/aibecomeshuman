@@ -27,6 +27,10 @@ from aibecomeshuman.perception.video import open_video
 NO_PICTURE_LIMIT_S = 30.0
 
 
+class SourceLost(Exception):
+    """The picture went away after play had started (the game was closed): end normally."""
+
+
 class FrameSource(Protocol):
     name: str
 
@@ -65,6 +69,7 @@ class ObsSource:
         self.source = source
         self.width = width
         self._failing_since = 0.0
+        self._had_picture = False
         try:
             self._client = obsws.ReqClient(host=host, port=port, password=password, timeout=5)
         except Exception as e:
@@ -84,12 +89,16 @@ class ObsSource:
             self._failing_since = self._failing_since or now
             if now - self._failing_since < NO_PICTURE_LIMIT_S:
                 return None
+            if self._had_picture:
+                # The game was closed (or OBS stopped capturing it): a normal way to end.
+                raise SourceLost(f"OBS has had no picture of '{self.source}' for a while") from e
             raise ConfigError(
                 f"OBS gives no picture for source '{self.source}' ({e}). Is the game running "
                 "and visible in OBS's preview? The source name is [live] obs_source in "
                 "config/default.toml."
             ) from e
         self._failing_since = 0.0
+        self._had_picture = True
         data = response.image_data.split(",", 1)[-1]
         return cv2.imdecode(np.frombuffer(base64.b64decode(data), np.uint8), cv2.IMREAD_COLOR)
 

@@ -92,6 +92,7 @@
   .list { display: flex; flex-direction: column; gap: 8px; }
   .item { padding: 8px 12px; border: 1px solid var(--line); border-radius: 8px; }
   .item .meta { color: var(--muted); font-size: 12px; }
+  .live-bar { position: sticky; top: 0; z-index: 5; box-shadow: 0 4px 12px rgba(0,0,0,.08); }
   .text-in { width: 100%; padding: 7px 9px; border: 1px solid var(--line); border-radius: 6px;
              background: var(--bg); color: var(--text); font: inherit; }
   .seen { display: grid; grid-template-columns: 52px 1fr 132px; gap: 10px; align-items: start; }
@@ -163,14 +164,17 @@
           <div style="display:flex;gap:6px"><input id="live-speed" class="text-in" value="1" style="width:70px">
           <input id="live-from" class="text-in" placeholder="00:00"></div></div>
       </div>
-      <div class="row">
+      <div class="error" id="live-error"></div>
+    </div>
+    <!-- Stays on screen while the transcript grows below. -->
+    <div class="card live-bar">
+      <div class="row" style="margin-top:0">
         <button class="btn" id="live-start">▶ Start watching</button>
         <button class="btn" id="live-stop" disabled style="background:var(--bad)">■ Stop</button>
         <span class="hint" id="live-state"></span>
       </div>
-      <div class="error" id="live-error"></div>
+      <div id="live-suggestion" style="display:none;margin-top:10px"></div>
     </div>
-    <div class="card" id="live-suggestion" style="display:none"></div>
     <div class="transcript" id="live-view"></div>
   </section>
 
@@ -638,13 +642,16 @@ $("live-start").addEventListener("click", async () => {
         if (ev.type === "shadow.suggestion") {
           big.style.display = "block";
           big.replaceChildren(el("div", { class: "hint" }, "The AI would pick"),
-            el("div", { style: "font-size:32px;font-weight:700;margin:4px 0" }, `${ev.payload.button} ${ev.payload.suggested}`),
-            el("div", {}, ev.payload.reasoning || ""));
+            el("div", { style: "font-size:28px;font-weight:700;margin:2px 0" }, `${ev.payload.button} ${ev.payload.suggested}`),
+            el("div", { class: "hint", style: "max-height:4.5em;overflow:auto" }, ev.payload.reasoning || ""));
         }
       }
       if (job.status === "running") {
         $("live-state").textContent = `Watching… ${frames} frames read · ${usd(cost)}`;
-        $("live-view").lastElementChild?.scrollIntoView({ block: "nearest" });
+        // Follow new messages only if the page is already at the bottom (never fight
+        // the operator scrolling up to read).
+        const nearBottom = window.innerHeight + window.scrollY >= document.body.scrollHeight - 120;
+        if (nearBottom) window.scrollTo({ top: document.body.scrollHeight });
       } else {
         $("live-state").textContent = `Stopped (${job.status}) · ${usd(cost)}`;
         if (job.error) $("live-error").textContent = job.error;

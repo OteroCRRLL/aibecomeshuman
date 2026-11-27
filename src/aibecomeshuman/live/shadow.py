@@ -22,7 +22,7 @@ from dataclasses import dataclass, field
 
 from aibecomeshuman.cognition.decider import Choice, Option
 from aibecomeshuman.env.scenario import ObservationStep, Scenario
-from aibecomeshuman.live.sources import FrameSource
+from aibecomeshuman.live.sources import FrameSource, SourceLost
 from aibecomeshuman.llm.types import LLMError, LLMRequest, Message
 from aibecomeshuman.perception.observer import Observation, Observer, ObserverContext
 from aibecomeshuman.perception.pipeline import CONTEXT_FRAME_WIDTH, CONTEXT_FRAMES
@@ -46,8 +46,6 @@ from aibecomeshuman.run.session import RunSession
 Echo = Callable[[str], None]
 
 MENU, ITEM, CHAPTER_END = 0, 1, 1  # queue priorities: menus first
-# Menu sightings closer than this (and with the same options) are the same menu.
-SAME_MENU_GAP_S = 3.5
 # Lines heard after a menu before deciding what the operator picked.
 PICK_LINES = 3
 
@@ -138,6 +136,7 @@ class ShadowSession:
         self._suggested: list[_Suggestion] = []
         self._in_flowchart = False
         self._last_menu_t = -1e9
+        self._last_no_menu_t = -1e9
 
     # -- main loop ----------------------------------------------------------------
 
@@ -169,6 +168,9 @@ class ShadowSession:
                     ]
                 lane = menu_lane if kf.reason == "menu" else pool
                 lane.submit(self._observe, seq, kf.t, name, jpeg, ctx, earlier, time.monotonic())
+        except SourceLost as e:
+            self.events.emit("shadow.source_lost", source="live", payload={"reason": str(e)})
+            self.say("  -- the game is no longer visible: ending and saving memory --")
         finally:
             self.source.close()
             pool.shutdown(wait=True)
@@ -227,7 +229,9 @@ class ShadowSession:
                 continue
             visible, _ = self.redactor.apply(obs)
             if visible is None:
-                continue
+                continue  # pause menu etc.: says nothing about the game's own menu
+            if not visible.choice.present:
+                self._last_no_menu_t = max(self._last_no_menu_t, visible.t)
             self._in_flowchart = False
             self._update_context(visible)
             self.builder.add(visible)
@@ -249,11 +253,12 @@ class ShadowSession:
         if len(labels) < 2:
             return
         with self._lock:
-            # The same menu seen again a moment later is already being answered; similar
-            # options after a gap are a new menu (e.g. the same tones offered again).
-            recent = visible.t - self._last_menu_t <= SAME_MENU_GAP_S
+            # A menu is new only if a frame WITHOUT a menu was seen since the last sighting
+            # (the operator may take their time; the same menu must not be answered again).
+            closed_since = self._last_no_menu_t > self._last_menu_t
             self._last_menu_t = max(self._last_menu_t, visible.t)
-            if recent and any(self._overlaps(s.labels, labels) for s in self._suggested[-1:]):
+            same = self._suggested and self._overlaps(self._suggested[-1].labels, labels)
+            if same and not closed_since:
                 return
             self._suggested.append(_Suggestion(labels, "", {}))
         buttons = {o.label.strip(): o.button for o in visible.choice.options}
