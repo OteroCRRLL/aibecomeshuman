@@ -24,6 +24,10 @@ from aibecomeshuman.config import ConfigError
 from aibecomeshuman.perception.video import open_video
 
 
+# How long OBS may have no picture (game starting, alt-tab) before giving up.
+NO_PICTURE_LIMIT_S = 30.0
+
+
 class FrameSource(Protocol):
     name: str
 
@@ -61,6 +65,7 @@ class ObsSource:
         self.name = f"obs:{source}"
         self.source = source
         self.width = width
+        self._failing_since = 0.0
         try:
             self._client = obsws.ReqClient(host=host, port=port, password=password, timeout=5)
         except Exception as e:
@@ -71,13 +76,21 @@ class ObsSource:
             ) from e
 
     def grab(self) -> np.ndarray | None:
+        """A frame, or None while the source has no picture yet (game not running or not
+        hooked). Gives up with a clear message after `NO_PICTURE_LIMIT_S` without one."""
         try:
             response = self._client.get_source_screenshot(self.source, "jpg", self.width, None, 90)
         except Exception as e:
+            now = time.monotonic()
+            self._failing_since = self._failing_since or now
+            if now - self._failing_since < NO_PICTURE_LIMIT_S:
+                return None
             raise ConfigError(
-                f"OBS could not capture source '{self.source}' ({e}). Check the source name "
-                "in config/default.toml ([live] obs_source)."
+                f"OBS gives no picture for source '{self.source}' ({e}). Is the game running "
+                "and visible in OBS's preview? The source name is [live] obs_source in "
+                "config/default.toml."
             ) from e
+        self._failing_since = 0.0
         data = response.image_data.split(",", 1)[-1]
         return cv2.imdecode(np.frombuffer(base64.b64decode(data), np.uint8), cv2.IMREAD_COLOR)
 
