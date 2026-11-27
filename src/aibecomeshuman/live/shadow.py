@@ -275,7 +275,7 @@ class ShadowSession:
             self._suggested.append(_Suggestion(labels, "", {}))
         buttons = {o.label.strip(): o.button for o in visible.choice.options}
         # The countdown started when the frame was captured, not when it was read.
-        payload = (labels, buttons, visible.choice.timed, captured_at)
+        payload = (labels, buttons, visible.choice.timed, captured_at, visible.choice.about)
         self._agent_queue.put((MENU, next(self._order), ("menu", payload)))
 
     @staticmethod
@@ -294,6 +294,7 @@ class ShadowSession:
             self.character = briefing.character
         # The observer and the transcript follow the chapter's protagonist.
         self.ctx.protagonist = self.character.capitalize()
+        self.ctx.appearance = self.library.appearance(self.character)
         self.builder.protagonist = self.character.capitalize()
         title = f"Chapter {chapter}" + (f": {briefing.title}" if briefing else "")
         scenario = Scenario(
@@ -366,11 +367,12 @@ class ShadowSession:
             except Exception as e:  # keep watching even if one step fails
                 self.events.emit("shadow.error", source="live", payload={"error": repr(e)})
 
-    def _suggest(self, runner, n, labels, buttons, timed, seen_at) -> None:
+    def _suggest(self, runner, n, labels, buttons, timed, seen_at, about="") -> None:
         elapsed = time.monotonic() - seen_at
         seconds = max(1.5, self.live.timed_choice_s - elapsed) if timed else None
         choice = Choice(
             id=f"live{n}",
+            prompt=f"The options are about: {about}" if about else "",
             timed=timed,
             seconds=seconds,
             options=[Option(id=f"o{i}", label=label) for i, label in enumerate(labels, 1)],
@@ -410,7 +412,7 @@ class ShadowSession:
             )
         suggested = suggestion.suggested if suggestion else ""
         if picked:
-            runner.record_pick(picked)
+            runner.record_pick(picked, choice_item.about)
             self.ctx.just_chosen = picked
         comparison = {
             "t": choice_item.t,

@@ -22,7 +22,9 @@ ItemKind = Literal["observation", "dialogue", "hud", "choice"]
 # A subtitle continuing an unfinished line this soon after it is the same speaker.
 CONTINUATION_S = 8.0
 # Descriptions closer together than this are the same moment seen from another angle.
-DESCRIPTION_GAP_S = 6.0
+# Kept short: in action scenes every second counts (a shot, a fall). The observer already
+# leaves the description empty when nothing new happened.
+DESCRIPTION_GAP_S = 1.5
 
 
 def _is_display_text(text: str) -> bool:
@@ -48,6 +50,7 @@ class TranscriptItem(BaseModel):
     speaker: str = ""
     speaker_basis: str = ""
     # choices only
+    about: str = ""  # what the options refer to (the fish on the floor...)
     options: list[ChoiceOption] = Field(default_factory=list)
     chosen: str = ""
     chosen_basis: str = ""  # "highlight" (seen on a frame) | "inferred" (from what followed)
@@ -78,6 +81,7 @@ class _OpenChoice:
         self.end = obs.t
         self.frame = obs.frame
         self.timed = obs.choice.timed
+        self.about = obs.choice.about
         self.options: dict[str, SeenOption] = {}
         self.chosen = ""
         self.update(obs)
@@ -90,6 +94,7 @@ class _OpenChoice:
     def update(self, obs: Observation) -> None:
         self.end = obs.t
         self.timed = self.timed or obs.choice.timed
+        self.about = self.about or obs.choice.about
         for option in obs.choice.options:
             label = option.label.strip()
             if not label:
@@ -102,6 +107,7 @@ class _OpenChoice:
         return TranscriptItem(
             t=self.start,
             kind="choice",
+            about=self.about,
             options=[
                 ChoiceOption(button=o.button, label=label, locked=o.locked)
                 for label, o in self.options.items()
@@ -124,7 +130,6 @@ class TranscriptBuilder:
         self._probability = ""
         self._choice: _OpenChoice | None = None
         self._after_choice = False
-        self._last_description = -1e9
 
     def add(self, obs: Observation) -> None:
         if obs.choice.present:
@@ -136,8 +141,11 @@ class TranscriptBuilder:
         else:
             self._close_choice()
 
-        if obs.description and obs.t - self._last_description >= DESCRIPTION_GAP_S:
-            self._last_description = obs.t
+        last = next((i for i in reversed(self.items) if i.kind == "observation"), None)
+        repeated = last is not None and (
+            obs.t - last.t < DESCRIPTION_GAP_S or similar(last.text, obs.description) >= 0.75
+        )
+        if obs.description and not repeated:
             self.items.append(
                 TranscriptItem(t=obs.t, kind="observation", text=obs.description, frame=obs.frame)
             )
@@ -272,5 +280,6 @@ def render_markdown(items: list[TranscriptItem], title: str) -> str:
                 timed = f", timed ~{item.seconds:.0f}s" if item.timed else ""
                 how = " (inferred)" if item.chosen_basis == "inferred" else ""
                 chosen = f" -> **{item.chosen}**{how}" if item.chosen else " -> (not seen)"
-                out.append(f"- `{stamp}` CHOICE{timed}: {options}{chosen}")
+                about = f" ({item.about})" if item.about else ""
+                out.append(f"- `{stamp}` CHOICE{about}{timed}: {options}{chosen}")
     return "\n".join(out) + "\n"

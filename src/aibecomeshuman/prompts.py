@@ -71,6 +71,10 @@ class PromptLibrary:
                 raise ConfigError(f"{path}: needs 'chapter' (number) and 'character'") from e
         return sorted(found, key=lambda b: b.chapter)
 
+    def appearance(self, character: str) -> str:
+        """How the character looks (for the observer only), from its sheet's front matter."""
+        return self._read("characters", f"{character}.md")[0].get("appearance", "")
+
     def briefing(self, chapter: int) -> Briefing | None:
         return next((b for b in self.briefings() if b.chapter == chapter), None)
 

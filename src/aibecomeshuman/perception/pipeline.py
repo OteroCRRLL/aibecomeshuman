@@ -151,7 +151,9 @@ def perceive(
     progress = {"done": 0}
 
     def work(chunk: list[StoredKeyframe]) -> None:
-        ctx = ObserverContext(protagonist=character.capitalize())
+        ctx = ObserverContext(
+            protagonist=character.capitalize(), appearance=library.appearance(character)
+        )
         last_chosen = ""
         recent: list[tuple[float, bytes]] = []  # small copies of this worker's last frames
         for kf in chunk:

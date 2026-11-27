@@ -47,6 +47,11 @@ OBSERVATION_SCHEMA = {
             "type": "object",
             "properties": {
                 "kind": {"type": "string", "enum": list(ChoiceKind.__args__)},
+                "about": {
+                    "type": "string",
+                    "description": "what or whom the options refer to, e.g. 'the fish on "
+                    "the floor' or 'answering the man holding the girl'; empty if no choice",
+                },
                 "timed": {"type": "boolean"},
                 "options": {
                     "type": "array",
@@ -63,7 +68,7 @@ OBSERVATION_SCHEMA = {
                     },
                 },
             },
-            "required": ["kind", "timed", "options"],
+            "required": ["kind", "about", "timed", "options"],
             "additionalProperties": False,
         },
         "hud": {
@@ -118,6 +123,7 @@ class SeenOption(BaseModel):
 
 class SeenChoice(BaseModel):
     kind: ChoiceKind = "none"
+    about: str = ""  # what the options refer to (the fish, the man...)
     timed: bool = False
     options: list[SeenOption] = Field(default_factory=list)
 
@@ -155,6 +161,8 @@ class ObserverContext(BaseModel):
     """What the observer is told about the moments before this frame."""
 
     protagonist: str
+    # How the protagonist looks, so it is not confused with others on screen.
+    appearance: str = ""
     known_people: dict[str, str] = Field(default_factory=dict)  # name -> who
     previous_description: str = ""
     recent_lines: list[str] = Field(default_factory=list)  # "speaker: text"
@@ -167,6 +175,8 @@ class ObserverContext(BaseModel):
             "<context>",
             f"time: {time_label}",
             f"protagonist (the character the player controls): {self.protagonist}",
+            f"the protagonist looks like: {self.appearance or '(unknown)'}. Anyone who does "
+            "not look like this is someone else, even in a close-up.",
             f"known people:\n{people}",
             f"previous description: {self.previous_description or '(none)'}",
             f"recent subtitle lines:\n{lines}",

@@ -182,13 +182,19 @@ class ScenarioRunner:
             self._check("decision", f"decision-{choice.id}", decision.reasoning)
         return decision, label
 
-    def record_pick(self, label: str) -> None:
+    def record_pick(self, label: str, about: str = "") -> None:
         """What the operator actually picked: this is what the character did."""
-        self.ctx.add("decision", f"I chose: {label}")
+        self.ctx.add("decision", f"I chose: {label}" + (f" (about {about})" if about else ""))
         self._update_stance()
 
     def finish(self) -> None:
         self._events.emit("scene.finished", source="env", payload={"scenario": self.scenario.id})
+        if not self.ctx.entries:
+            # Nothing was lived (e.g. the game was closed right after a chapter ended):
+            # no memory to write, nothing to reflect on.
+            self._events.emit("scene.empty", source="env", payload={"scenario": self.scenario.id})
+            self.campaign.save(self.scenario.character)
+            return
         self._audit_scene()
         self._end_of_scene()
 

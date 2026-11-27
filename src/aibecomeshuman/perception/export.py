@@ -43,6 +43,8 @@ def scenario_toml(
                 continue
             choice_n += 1
             out += ["[[steps]]", 'kind = "choice"', f'id = "c{choice_n}"']
+            if item.about:
+                out.append(f"prompt = {_q(item.about)}")
             out.append(f"# recorded at {fmt_time(item.t)}; operator picked: {item.chosen or '?'}")
             if item.timed:
                 seconds = max(item.seconds, MIN_TIMED_SECONDS)

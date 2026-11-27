@@ -43,6 +43,13 @@ Choices:
 - `choice`: options the player can pick right now. They are short labels, each next to a
   coloured button letter (Y yellow, X blue, B red, A green), or circular prompts moved
   with the stick (button `stick`). Copy labels exactly, without brackets.
+- `about`: what or whom the options refer to, from what is on screen: stick prompts sit
+  next to an object or person ("the fish on the floor"); dialogue options answer someone
+  ("answering the man holding the girl"). Short and concrete.
+- Who is who: check the protagonist's appearance in the context before saying that
+  something happens to the protagonist. In action scenes the camera often shows someone
+  else up close; if the person hit, falling or speaking does not look like the
+  protagonist, it is someone else.
 - A list of objectives (no button letters next to them) is NOT a choice: put those texts
   in `hud.objectives`.
 - `locked`: only when the label cannot be read ("[...]") or the option is greyed out. A
