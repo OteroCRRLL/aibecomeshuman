@@ -193,6 +193,13 @@ class ObserverContext(BaseModel):
         return "\n".join(parts)
 
 
+MENU_SCHEMA = {
+    "type": "object",
+    "properties": {"choice": OBSERVATION_SCHEMA["properties"]["choice"]},
+    "required": ["choice"],
+    "additionalProperties": False,
+}
+
 BATCH_SCHEMA = {
     "type": "object",
     "properties": {"frames": {"type": "array", "items": OBSERVATION_SCHEMA}},
@@ -237,6 +244,19 @@ class Observer:
         )
         response = self.provider.complete(request)
         return _finish(Observation.model_validate(response.parsed or {}), t)
+
+    def read_menu(self, jpeg: bytes, t: float, menu_system: str) -> Observation:
+        """Only the menu, as fast as possible (short prompt, small answer): used the moment
+        a menu appears, while the full observation of the same frame follows unhurried."""
+        request = LLMRequest(
+            purpose="observe.menu",
+            system=menu_system,
+            messages=[Message(role="user", content=[_image(jpeg)])],
+            json_schema=MENU_SCHEMA,
+            max_tokens=600,
+        )
+        parsed = self.provider.complete(request).parsed or {}
+        return _finish(Observation.model_validate({"choice": parsed.get("choice", {})}), t)
 
     def observe_batch(
         self, frames: list[tuple[float, str, bytes]], ctx: ObserverContext

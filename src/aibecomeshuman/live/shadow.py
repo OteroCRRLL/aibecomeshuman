@@ -169,6 +169,7 @@ class ShadowSession:
         if briefing is not None and not self.fixed_character:
             self.character = briefing.character
         self.observer = Observer(session.llm("observer"), library.role("observer"))
+        self.menu_system = library.role("menu_reader")
         self.escalator: Escalator | None = None
         if session.has_role("observer_strong"):
 
@@ -234,7 +235,7 @@ class ShadowSession:
         agent = threading.Thread(target=self._agent_loop, daemon=True)
         agent.start()
         pool = ThreadPoolExecutor(max_workers=self.live.workers)
-        menu_lane = ThreadPoolExecutor(max_workers=1)
+        menu_lane = ThreadPoolExecutor(max_workers=2)  # a retry never waits for another
         seqs = itertools.count()
         reader = SubtitleReader.create() if self.live.subtitles_ocr else None
         self.events.emit("shadow.subtitles", source="live",
@@ -280,7 +281,11 @@ class ShadowSession:
                         self._urgent_first_t = kf.t  # a new attempt to read a menu
                     self._urgent_menu_t = kf.t
                     flush()
-                    menu_lane.submit(self._observe, *frame)
+                    # Fast lane: only the options, at once. The same frame also joins the
+                    # normal batches for the full reading (subtitles, scene) a bit later.
+                    menu_lane.submit(self._read_menu_now, kf.t, jpeg, time.monotonic())
+                    pending.append(frame)
+                    flush()
                     continue
                 pending.append(frame)
                 if (
@@ -353,6 +358,16 @@ class ShadowSession:
             self.events.emit("perception.failed", "perception", {"t": t, "error": repr(e)})
             obs = None
         self._handle(seq, t, name, jpeg, ctx, earlier, captured_at, in_burst, obs)
+
+    def _read_menu_now(self, t: float, jpeg: bytes, captured_at: float) -> None:
+        try:
+            obs = self.observer.read_menu(jpeg, t, self.menu_system)
+        except Exception as e:  # the full reading of the same frame is still coming
+            self.events.emit("perception.failed", "perception", {"t": t, "error": repr(e)})
+            return
+        visible, _ = self.redactor.apply(obs)
+        if visible is not None and visible.choice.present:
+            self._menu_seen(visible, captured_at)
 
     def _observe_batch(self, batch: list[tuple]) -> None:
         """Several frames in one observer call (cheaper); each result handled as usual."""
@@ -514,6 +529,9 @@ class ShadowSession:
         runner.operator_controlled = not self.autonomous
         runner.begin()
         self._runner = runner
+        if self.autonomous and runner.ctx.briefing:
+            # Have a stance ready before the first menu (otherwise it is built then, slowly).
+            runner._update_stance()
         return runner
 
     def _agent_loop(self) -> None:
@@ -599,6 +617,9 @@ class ShadowSession:
         self, runner, n, labels, buttons, timed, seen_at, about="", directions=None
     ) -> None:
         elapsed = time.monotonic() - seen_at
+        # Autonomous: a countdown is not always spotted, and missing one lets the game pick.
+        # Every menu takes the fast path (stance + fast model) and is pressed at once.
+        timed = timed or self.autonomous
         seconds = max(1.5, self.live.timed_choice_s - elapsed) if timed else None
         choice = Choice(
             id=f"live{n}",

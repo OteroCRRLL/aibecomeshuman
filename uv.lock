@@ -15,6 +15,7 @@ dependencies = [
     { name = "opencv-python-headless" },
     { name = "pydantic" },
     { name = "uvicorn" },
+    { name = "vgamepad", marker = "sys_platform == 'win32'" },
     { name = "winrt-runtime", marker = "sys_platform == 'win32'" },
     { name = "winrt-windows-foundation", marker = "sys_platform == 'win32'" },
     { name = "winrt-windows-foundation-collections", marker = "sys_platform == 'win32'" },
@@ -41,6 +42,7 @@ requires-dist = [
     { name = "opencv-python-headless", specifier = ">=4.10" },
     { name = "pydantic", specifier = ">=2.9" },
     { name = "uvicorn", specifier = ">=0.32" },
+    { name = "vgamepad", marker = "sys_platform == 'win32'", specifier = ">=0.1" },
     { name = "winrt-runtime", marker = "sys_platform == 'win32'", specifier = ">=2.0" },
     { name = "winrt-windows-foundation", marker = "sys_platform == 'win32'", specifier = ">=2.0" },
     { name = "winrt-windows-foundation-collections", marker = "sys_platform == 'win32'", specifier = ">=2.0" },
@@ -734,6 +736,12 @@ sdist = { url = "https://files.pythonhosted.org/packages/da/34/30e9280707135d2cf
 wheels = [
     { url = "https://files.pythonhosted.org/packages/38/0c/b54a4fdd7f90a3af8b02ebc9ce6712c2c208b7926a2f7bad95c33ebbe943/uvicorn-0.54.0-py3-none-any.whl", hash = "sha256:505bdb0f318731d45f1f712071fc781a8981f6847a31c902c9f5e652d4f67faf", size = 87427 },
 ]
+
+[[package]]
+name = "vgamepad"
+version = "0.2.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/06/a5/990701a89ea8d7528a269c2be1ba71d888de38a762a1b0f8d8eae4c2be62/vgamepad-0.2.0.tar.gz", hash = "sha256:6ac247e6441e194a0277b46f6f9abc02d7995de5ed8dc495b67eddd214364a88", size = 1187555 }
 
 [[package]]
 name = "websocket-client"
