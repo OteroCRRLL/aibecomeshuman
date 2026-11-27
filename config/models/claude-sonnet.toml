@@ -1,0 +1,15 @@
+# Mid-tier model: the observer's eyes for key action moments only. Not locked: that use
+# is capped per chapter ([live] strong_cap_per_chapter_usd). Tested against Opus on the
+# first mission's ending: nearly as accurate at half the price.
+provider = "anthropic"
+model = "claude-sonnet-5-5"
+effort = "low"
+max_tokens = 4000
+timeout_s = 30
+supports_vision = true
+refusal_fallback = false
+
+# USD per million tokens (prompts under 100K tokens).
+price_input_per_mtok = 2.0
+price_output_per_mtok = 10.0
+price_cache_read_per_mtok = 0.20   # estimate (10% of input)

@@ -24,6 +24,7 @@ from aibecomeshuman.cognition.decider import Choice, Option
 from aibecomeshuman.env.scenario import ObservationStep, Scenario
 from aibecomeshuman.live.sources import FrameSource, SourceLost
 from aibecomeshuman.llm.types import LLMError, LLMRequest, Message
+from aibecomeshuman.perception.escalate import Escalator
 from aibecomeshuman.perception.observer import Observation, Observer, ObserverContext
 from aibecomeshuman.perception.pipeline import CONTEXT_FRAME_WIDTH, CONTEXT_FRAMES
 from aibecomeshuman.perception.redact import Redactor
@@ -132,6 +133,18 @@ class ShadowSession:
         if briefing is not None and not self.fixed_character:
             self.character = briefing.character
         self.observer = Observer(session.llm("observer"), library.role("observer"))
+        self.escalator: Escalator | None = None
+        if session.has_role("observer_strong"):
+
+            def strong_spent() -> float:
+                usage = session.manifest.usage_by_role.get("observer_strong")  # type: ignore[union-attr]
+                return usage.cost_usd if usage else 0.0
+
+            self.escalator = Escalator(
+                Observer(session.llm("observer_strong"), library.role("observer")),
+                self.live.strong_cap_per_chapter_usd,
+                strong_spent,
+            )
         self.redactor = Redactor(self.settings.hidden_patterns)
         self.ctx = ObserverContext(protagonist=self.character.capitalize())
         self.builder = TranscriptBuilder(
@@ -178,8 +191,11 @@ class ShadowSession:
                     self._recent = [*self._recent, (kf.t, shrink_jpeg(jpeg, CONTEXT_FRAME_WIDTH))][
                         -CONTEXT_FRAMES:
                     ]
+                in_burst = bool(self.escalator and self.escalator.note_keyframe(kf.t, kf.reason))
                 lane = menu_lane if kf.reason == "menu" else pool
-                lane.submit(self._observe, seq, kf.t, name, jpeg, ctx, earlier, time.monotonic())
+                lane.submit(
+                    self._observe, seq, kf.t, name, jpeg, ctx, earlier, time.monotonic(), in_burst
+                )
         except SourceLost as e:
             self.events.emit("shadow.source_lost", source="live", payload={"reason": str(e)})
             self.say("  -- the game is no longer visible: ending and saving memory --")
@@ -200,7 +216,7 @@ class ShadowSession:
 
     # -- perception (worker threads) ----------------------------------------------
 
-    def _observe(self, seq, t, name, jpeg, ctx, earlier, captured_at) -> None:
+    def _observe(self, seq, t, name, jpeg, ctx, earlier, captured_at, in_burst=False) -> None:
         obs: Observation | None
         try:
             obs = self.observer.observe(jpeg, t, fmt_time(t), ctx, earlier)
@@ -208,6 +224,20 @@ class ShadowSession:
         except LLMError as e:
             self.events.emit("perception.failed", "perception", {"t": t, "error": str(e)})
             obs = None
+        if obs is not None and self.escalator is not None and self.escalator.wanted(obs, in_burst):
+            try:
+                strong = self.escalator.strong.observe(jpeg, t, fmt_time(t), ctx, earlier)
+                strong.frame = name
+                self.events.emit(
+                    "perception.escalated",
+                    source="perception",
+                    payload={"t": t, "frame": name, "cheap": obs.description,
+                             "strong": strong.description,
+                             "chapter_spend_usd": round(self.escalator.chapter_spend(), 4)},
+                )
+                obs = strong
+            except LLMError as e:  # keep the cheap reading
+                self.events.emit("perception.failed", "perception", {"t": t, "error": str(e)})
         visible = None
         if obs is not None:
             visible, hidden = self.redactor.apply(obs)
@@ -337,6 +367,8 @@ class ShadowSession:
                     runner.finish()
                     self.campaign.state.chapter += 1  # the game's chapters come in order
                     self.campaign.save(self.character)
+                    if self.escalator is not None:
+                        self.escalator.new_chapter()
                     runner = self._new_runner()
                     continue
                 if kind == "menu":

@@ -23,6 +23,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_valida
 # Technical roles the system can request. Each run assigns a model profile to each one.
 ROLES: tuple[str, ...] = (
     "observer",  # cheap VLM: turns keyframes into observations
+    "observer_strong",  # better eyes for key action moments only (capped per chapter)
     "decider",  # critical untimed decisions + maintaining the scene stance
     "decider_fast",  # timed choices: stance + options -> option
     "reflector",  # personality evolution when closing scenes/chapters
@@ -82,14 +83,15 @@ class PerceptionSettings(_Strict):
     # One frame is checked every `sample_every_s`; only frames that changed go to the model.
     sample_every_s: float = Field(default=1.0, gt=0)
     # Send a frame anyway if nothing was sent for this long (catches slow changes).
-    heartbeat_s: float = Field(default=4.0, gt=0)
+    heartbeat_s: float = Field(default=6.0, gt=0)
     # Fraction of the small thumbnail that must change to count as a new shot. The camera
     # moves almost all the time, so only big changes count; subtitles have their own check.
     change_ratio: float = Field(default=0.4, gt=0, le=1)
     # Frames darker than this mean brightness (0-255) are skipped (fades, loading).
     dark_threshold: float = Field(default=12.0, ge=0)
-    # Width of the frames sent to the model (Claude reads up to ~1568 px wide).
-    frame_width: int = Field(default=1568, ge=320)
+    # Width of the frames sent to the model. Menus keep more detail (small labels).
+    frame_width: int = Field(default=1280, ge=320)
+    menu_frame_width: int = Field(default=1568, ge=320)
     # Parallel model calls (each worker reads a contiguous stretch of the video).
     workers: int = Field(default=4, ge=1, le=16)
     # On-screen text matching these (case-insensitive regex) never reaches the agent.
@@ -110,7 +112,10 @@ class LiveSettings(_Strict):
     # The game's countdown is not readable; assume this much time for a timed choice.
     timed_choice_s: float = Field(default=6.0, gt=0)
     # Update the stance after this many new things perceived (lines, notices).
-    stance_every: int = Field(default=6, ge=1)
+    stance_every: int = Field(default=12, ge=1)
+    # Key action moments (fast changes, no dialogue, something dramatic) are read again by
+    # the `observer_strong` model, up to this much spend per game chapter.
+    strong_cap_per_chapter_usd: float = Field(default=0.15, ge=0)
 
 
 class AppConfig(_Strict):

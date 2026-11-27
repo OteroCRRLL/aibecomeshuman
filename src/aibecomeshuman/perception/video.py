@@ -29,7 +29,9 @@ SUBTITLE_DELTA = 0.35
 SUBTITLE_MIN_CELLS = 6
 # A choice menu is likely when this many button letters line up; re-check it this often.
 MENU_MIN = 2
-MENU_REPEAT_S = 2.0
+# While the same menu stays up (the operator thinking) it is re-read only this often: the
+# pick is worked out from what is said afterwards, not from a highlighted frame.
+MENU_REPEAT_S = 6.0
 
 
 @dataclass(frozen=True)
@@ -224,7 +226,8 @@ def select_keyframes(
         if reason is None:
             continue
         last_thumb, last_subs, last_sent = thumb, subs, t
-        yield Keyframe(t=t, image=resize_to_width(frame, settings.frame_width), reason=reason)
+        width = settings.menu_frame_width if menu >= MENU_MIN else settings.frame_width
+        yield Keyframe(t=t, image=resize_to_width(frame, width), reason=reason)
 
 
 def fmt_time(t: float) -> str:

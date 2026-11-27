@@ -29,17 +29,21 @@ frames_per_s = 2.0
 workers = 3
 # Assumed countdown for timed choices (the game's timer bar is not read yet).
 timed_choice_s = 6.0
-stance_every = 6
+stance_every = 12
+# Key action moments are re-read by the stronger observer, up to this spend per chapter.
+strong_cap_per_chapter_usd = 0.15
 
 [perception]
 # Game recordings (never committed).
 recordings_dir = "data/recordings"
 # Check one frame per second; only frames that changed are sent to the observer model.
 sample_every_s = 1.0
-heartbeat_s = 4.0
+heartbeat_s = 6.0
 change_ratio = 0.4
 dark_threshold = 12.0
-frame_width = 1568
+# Frames sent to the observer: normal ones smaller (cheaper), menus sharper (small labels).
+frame_width = 1280
+menu_frame_width = 1568
 workers = 4
 # On-screen text that must never reach the agent (case-insensitive regular expressions).
 # Menus, the end-of-chapter flowchart and tutorial hints are always hidden.
