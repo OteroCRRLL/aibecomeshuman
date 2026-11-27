@@ -125,7 +125,7 @@ class LiveSettings(_Strict):
     batch_wait_s: float = Field(default=4.0, gt=0)
     # Autonomous mode: pause before pressing an untimed choice (a human-looking beat), and
     # how recently the operator's own controller must have been idle for the agent to press.
-    press_delay_s: float = Field(default=0.8, ge=0)
+    press_delay_s: float = Field(default=0.3, ge=0)
     operator_grace_s: float = Field(default=1.5, ge=0)
 
 

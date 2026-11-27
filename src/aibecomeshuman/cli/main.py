@@ -167,7 +167,7 @@ def cmd_shadow(args: argparse.Namespace) -> int:
     project = _load(args)
     source = build_source(
         args.source, project, speed=args.speed, start_s=parse_time(args.start) or 0.0,
-        recordings_dir=project.recordings_dir,
+        recordings_dir=project.recordings_dir, end_s=parse_time(args.end),
     )
     session = _session(project, args)
     stop = threading.Event()
@@ -323,6 +323,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     shadow.add_argument("--speed", type=float, default=1.0, help="recordings only: playback speed")
     shadow.add_argument("--from", dest="start", help="recordings only: start time, e.g. 07:30")
+    shadow.add_argument("--to", dest="end", help="recordings only: end time, e.g. 09:00")
     shadow.set_defaults(func=cmd_shadow)
 
     evaluate = sub.add_parser("eval", help="anti-metagaming evaluation with canary scenes")

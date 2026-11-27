@@ -458,6 +458,12 @@ class ShadowSession:
         labels = [o.label.strip() for o in visible.choice.options if not o.locked and o.label]
         if len(labels) < 2:
             return
+        if self._looks_like_display_text(labels):
+            # Objectives ("DEDUCE LO QUE PASÓ") or analysis texts read as a menu: pressing
+            # a button now would act in the game for nothing.
+            self.events.emit("perception.not_a_menu", source="perception",
+                             payload={"t": visible.t, "labels": labels})
+            return
         with self._lock:
             # A menu is new only if a frame WITHOUT a menu was seen since the last sighting
             # (the operator may take their time; the same menu must not be answered again).
@@ -487,6 +493,12 @@ class ShadowSession:
                 self._suggest(self._runner, self._choice_n, *payload)
             except Exception as e:  # keep playing even if one decision fails
                 self.events.emit("shadow.error", source="live", payload={"error": repr(e)})
+
+    def _looks_like_display_text(self, labels: list[str]) -> bool:
+        """True if the 'options' are texts already seen on the protagonist's display."""
+        with self._lock:
+            seen = [item.text for item in self.builder.items if item.kind == "hud"]
+        return any(similar(label, text) >= 0.85 for label in labels for text in seen)
 
     @staticmethod
     def _overlaps(a: list[str], b: list[str]) -> bool:
@@ -617,9 +629,9 @@ class ShadowSession:
         self, runner, n, labels, buttons, timed, seen_at, about="", directions=None
     ) -> None:
         elapsed = time.monotonic() - seen_at
-        # Autonomous: a countdown is not always spotted, and missing one lets the game pick.
-        # Every menu takes the fast path (stance + fast model) and is pressed at once.
-        timed = timed or self.autonomous
+        # Timed menus take the fast path (stance + recent scene + fast model); the others are
+        # decided with the whole scene and memory. Forcing every menu onto the fast path
+        # made the agent reason from a drifting stance (first mission, Allen's questions).
         seconds = max(1.5, self.live.timed_choice_s - elapsed) if timed else None
         choice = Choice(
             id=f"live{n}",

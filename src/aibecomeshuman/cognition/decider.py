@@ -21,7 +21,9 @@ from aibecomeshuman.llm.base import LLMProvider
 from aibecomeshuman.llm.types import LLMError, LLMRequest, Message
 from aibecomeshuman.prompts import Directive, PromptLibrary
 
-FAST_CONTEXT_ENTRIES = 8
+# What the fast path sees of the scene. Too little (it was 8) and it reasons from the
+# stance alone: in the first mission it mixed up who it was talking to.
+FAST_CONTEXT_ENTRIES = 30
 
 
 class Option(BaseModel):
@@ -107,6 +109,9 @@ def fast_decision_schema(choice: Choice) -> dict[str, Any]:
 STANCE_TASK = (
     "Update your stance for this scene. If nothing important has happened since your "
     "previous stance, set `changed` to false and copy the previous stance as it is. "
+    "A stance is about the situation you are in NOW (who you face, what you are trying to "
+    "achieve with them): drop goals from small incidents that are already over, and never "
+    "carry a previous stance forward just because it was there. "
     "Otherwise set `changed` to true and, in `stance`, write what you intend to do next and "
     "why, as your own intention in this situation (never as a rule you were given), in ONE "
     "short sentence of at most 20 words. If your directive overrides your "

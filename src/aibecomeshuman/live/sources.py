@@ -131,7 +131,12 @@ class ScreenSource:
 
 
 def build_source(
-    spec: str, project, speed: float = 1.0, start_s: float = 0.0, recordings_dir: Path | None = None
+    spec: str,
+    project,
+    speed: float = 1.0,
+    start_s: float = 0.0,
+    recordings_dir: Path | None = None,
+    end_s: float | None = None,
 ) -> FrameSource:
     """'obs' | 'screen' | 'screen:2' | a recording path (or a file name in the recordings
     folder)."""
@@ -151,17 +156,20 @@ def build_source(
         path = recordings_dir / spec
     if not path.is_file():
         raise ConfigError(f"unknown source '{spec}': use obs, screen or a recording file")
-    return RecordingSource(path, speed=speed, start_s=start_s)
+    return RecordingSource(path, speed=speed, start_s=start_s, end_s=end_s)
 
 
 class RecordingSource:
     """A recording played back on the wall clock (`speed` 2 = twice as fast)."""
 
-    def __init__(self, path: Path, speed: float = 1.0, start_s: float = 0.0) -> None:
+    def __init__(
+        self, path: Path, speed: float = 1.0, start_s: float = 0.0, end_s: float | None = None
+    ) -> None:
         self.name = f"recording:{path.name}"
         self.path = path
         self.speed = speed
         self.start_s = start_s
+        self.end_s = end_s
         self._cap, self.info = open_video(path)
         if start_s:
             self._cap.set(cv2.CAP_PROP_POS_MSEC, start_s * 1000)
@@ -181,6 +189,8 @@ class RecordingSource:
             if not ok:
                 return
             index += 1
+            if self.end_s is not None and index / fps > self.end_s:
+                return
             yield index / fps, frame
             time.sleep(max(0.0, every_s - (time.monotonic() - wall_start) % every_s))
 

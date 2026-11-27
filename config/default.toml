@@ -41,7 +41,7 @@ batch_frames = 3
 batch_wait_s = 4.0
 # Autonomous mode (the AI presses the buttons): a short pause before untimed choices, and
 # the AI never presses if your own controller was used in the last `operator_grace_s`.
-press_delay_s = 0.8
+press_delay_s = 0.3
 operator_grace_s = 1.5
 
 [perception]
