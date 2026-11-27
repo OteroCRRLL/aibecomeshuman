@@ -116,8 +116,13 @@ class LiveSettings(_Strict):
     # Key action moments (fast changes, no dialogue, something dramatic) are read again by
     # the `observer_strong` model, up to this much spend per game chapter.
     strong_cap_per_chapter_usd: float = Field(default=0.15, ge=0)
-    # Read subtitles with the free Windows OCR instead of sending frames for them.
-    subtitles_ocr: bool = True
+    # Read subtitles with the free Windows OCR instead of sending frames for them. Off by
+    # default: with batching it saves little, and speakers are attributed better from frames.
+    subtitles_ocr: bool = False
+    # Frames sent to the observer together in one call (menus always go alone, at once),
+    # and the longest a frame waits for company before being sent anyway.
+    batch_frames: int = Field(default=3, ge=1, le=6)
+    batch_wait_s: float = Field(default=4.0, gt=0)
 
 
 class AppConfig(_Strict):

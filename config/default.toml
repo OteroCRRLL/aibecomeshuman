@@ -32,8 +32,12 @@ timed_choice_s = 6.0
 stance_every = 12
 # Key action moments are re-read by the stronger observer, up to this spend per chapter.
 strong_cap_per_chapter_usd = 0.15
-# Read subtitles on this PC with the free Windows OCR (Spanish), not with the vision model.
-subtitles_ocr = true
+# Read subtitles on this PC with the free Windows OCR (Spanish) instead of the vision model.
+# Off: with batching it saves little, and who-says-what is better read from the frames.
+subtitles_ocr = false
+# Frames sent to the observer together in one call (cheaper); menus always go alone.
+batch_frames = 3
+batch_wait_s = 4.0
 
 [perception]
 # Game recordings (never committed).

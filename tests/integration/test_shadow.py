@@ -50,6 +50,9 @@ class ScriptedObserver:
                             speaker_basis="after_choice")
         return Observation(t=t, subtitles=[line])
 
+    def observe_batch(self, frames, ctx):
+        return [self.observe(jpeg, t, label, ctx) for t, label, jpeg in frames]
+
 
 @pytest.fixture
 def clip(tmp_path: Path) -> Path:
@@ -110,7 +113,7 @@ def test_closing_the_game_ends_normally(project: ProjectConfig) -> None:
         ShadowSession(session, ClosingGame(), "connor").run()
     events = list(read_events(session.dir / "events.jsonl"))
     types = [e.type for e in events]
-    assert "shadow.source_lost" in types and "memory.consolidated" in types
+    assert "shadow.source_lost" in types and "scene.finished" in types
     assert events[-1].payload["status"] == "ok"
 
 
@@ -121,6 +124,9 @@ class ChapterObserver:
         if 3 <= t < 5:
             return Observation(t=t, screen="flowchart")
         return Observation(t=t, description=f"something happens at {int(t)}")
+
+    def observe_batch(self, frames, ctx):
+        return [self.observe(jpeg, t, label, ctx) for t, label, jpeg in frames]
 
 
 def test_briefing_protagonist_and_chapter_advance(project: ProjectConfig, tmp_path) -> None:

@@ -55,6 +55,8 @@ Echo = Callable[[str], None]
 MENU, ITEM, CHAPTER_END = 0, 1, 1  # queue priorities: menus first
 # Lines heard after a menu before deciding what the operator picked.
 PICK_LINES = 3
+# A menu keyframe this long after the previous one is a new menu: urgent, sent alone.
+MENU_URGENT_GAP_S = 8.0
 
 SPEAKER_SYSTEM = (
     "You say who speaks a subtitle line in a scene. The protagonist is {protagonist}. Use "
@@ -206,6 +208,14 @@ class ShadowSession:
             if reader is not None:
                 frames = self._read_subtitles(frames, reader, seqs)
             keyframes = select_keyframes(frames, self.settings, subtitle_trigger=reader is None)
+            pending: list[tuple] = []  # frames waiting to go to the observer together
+            last_menu_kf = -1e9
+
+            def flush() -> None:
+                if pending:
+                    pool.submit(self._observe_batch, list(pending))
+                    pending.clear()
+
             for kf in keyframes:
                 seq = next(seqs)
                 self.report.keyframes += 1
@@ -219,10 +229,24 @@ class ShadowSession:
                         -CONTEXT_FRAMES:
                     ]
                 in_burst = bool(self.escalator and self.escalator.note_keyframe(kf.t, kf.reason))
-                lane = menu_lane if kf.reason == "menu" else pool
-                lane.submit(
-                    self._observe, seq, kf.t, name, jpeg, ctx, earlier, time.monotonic(), in_burst
-                )
+                frame = (seq, kf.t, name, jpeg, ctx, earlier, time.monotonic(), in_burst)
+                if kf.reason == "menu" and kf.t - last_menu_kf > MENU_URGENT_GAP_S:
+                    # A menu that just appeared can't wait: send what is pending (the lines
+                    # just before it), then the menu on its own lane. Re-reads of a menu
+                    # already up (the operator thinking) go in the normal batches.
+                    last_menu_kf = kf.t
+                    flush()
+                    menu_lane.submit(self._observe, *frame)
+                    continue
+                if kf.reason == "menu":
+                    last_menu_kf = kf.t
+                pending.append(frame)
+                if (
+                    len(pending) >= self.live.batch_frames
+                    or kf.t - pending[0][1] >= self.live.batch_wait_s
+                ):
+                    flush()
+            flush()
         except SourceLost as e:
             self.events.emit("shadow.source_lost", source="live", payload={"reason": str(e)})
             self.say("  -- the game is no longer visible: ending and saving memory --")
@@ -270,10 +294,28 @@ class ShadowSession:
         obs: Observation | None
         try:
             obs = self.observer.observe(jpeg, t, fmt_time(t), ctx, earlier)
-            obs.frame = name
-        except LLMError as e:
-            self.events.emit("perception.failed", "perception", {"t": t, "error": str(e)})
+        except Exception as e:  # never leave a hole in the ordered stream
+            self.events.emit("perception.failed", "perception", {"t": t, "error": repr(e)})
             obs = None
+        self._handle(seq, t, name, jpeg, ctx, earlier, captured_at, in_burst, obs)
+
+    def _observe_batch(self, batch: list[tuple]) -> None:
+        """Several frames in one observer call (cheaper); each result handled as usual."""
+        ctx = batch[0][4]
+        try:
+            results: list[Observation | None] = self.observer.observe_batch(
+                [(t, fmt_time(t), jpeg) for _, t, _, jpeg, *_ in batch], ctx
+            )
+        except Exception as e:  # any failure: these frames count as failed, play goes on
+            payload = {"t": batch[0][1], "error": repr(e)}
+            self.events.emit("perception.failed", "perception", payload)
+            results = [None] * len(batch)
+        for frame, obs in zip(batch, results, strict=True):
+            self._handle(*frame, obs)
+
+    def _handle(self, seq, t, name, jpeg, ctx, earlier, captured_at, in_burst, obs) -> None:
+        if obs is not None:
+            obs.frame = name
         if obs is not None and self.escalator is not None and self.escalator.wanted(obs, in_burst):
             try:
                 strong = self.escalator.strong.observe(jpeg, t, fmt_time(t), ctx, earlier)

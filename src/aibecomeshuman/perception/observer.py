@@ -187,6 +187,14 @@ class ObserverContext(BaseModel):
         return "\n".join(parts)
 
 
+BATCH_SCHEMA = {
+    "type": "object",
+    "properties": {"frames": {"type": "array", "items": OBSERVATION_SCHEMA}},
+    "required": ["frames"],
+    "additionalProperties": False,
+}
+
+
 def _image(jpeg: bytes) -> ImagePart:
     return ImagePart(media_type="image/jpeg", data_b64=base64.b64encode(jpeg).decode())
 
@@ -222,10 +230,46 @@ class Observer:
             max_tokens=1500,
         )
         response = self.provider.complete(request)
-        observation = Observation.model_validate(response.parsed or {})
-        observation.t = t
-        for option in observation.choice.options:
-            # "[EMMA Y TÚ]" is an option unlocked by a clue; only "[...]" is really locked.
-            option.label = option.label.strip().strip("[]").strip()
-            option.locked = not re.search(r"\w", option.label)
-        return observation
+        return _finish(Observation.model_validate(response.parsed or {}), t)
+
+    def observe_batch(
+        self, frames: list[tuple[float, str, bytes]], ctx: ObserverContext
+    ) -> list[Observation]:
+        """Several frames (time, label, JPEG), oldest first, in ONE call: the fixed
+        instructions (most of a call's cost) are paid once. The frames also serve as each
+        other's motion context. Returns one observation per frame, in order."""
+        if len(frames) == 1:
+            t, label, jpeg = frames[0]
+            return [self.observe(jpeg, t, label, ctx)]
+        content: list[ImagePart | TextPart] = [
+            TextPart(text=f"{len(frames)} frames from the last seconds, oldest first. Return "
+                     "one observation per frame, in the same order. Report each line of "
+                     "subtitles only in the first frame where it appears; for a later frame, "
+                     "leave the description empty if nothing new happened since the one "
+                     "before it.")
+        ]
+        for n, (_, label, jpeg) in enumerate(frames, 1):
+            content += [TextPart(text=f"FRAME {n} ({label}):"), _image(jpeg)]
+        content.append(TextPart(text=ctx.render(frames[-1][1])))
+        request = LLMRequest(
+            purpose="observe.batch",
+            system=self.system,
+            messages=[Message(role="user", content=content)],
+            json_schema=BATCH_SCHEMA,
+            max_tokens=1200 * len(frames),
+        )
+        parsed = (self.provider.complete(request).parsed or {}).get("frames", [])
+        observations = []
+        for n, (t, _, _) in enumerate(frames):
+            row = parsed[n] if n < len(parsed) else {}
+            observations.append(_finish(Observation.model_validate(row), t))
+        return observations
+
+
+def _finish(observation: Observation, t: float) -> Observation:
+    observation.t = t
+    for option in observation.choice.options:
+        # "[EMMA Y TÚ]" is an option unlocked by a clue; only "[...]" is really locked.
+        option.label = option.label.strip().strip("[]").strip()
+        option.locked = not re.search(r"\w", option.label)
+    return observation
