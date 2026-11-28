@@ -123,7 +123,15 @@ STANCE_TASK = (
     "words each."
 )
 
-DECIDE_TASK = (
+# In a conversation, the options are short labels for what the character will SAY.
+OPTIONS_NOTE = (
+    "In a conversation, each option is a short label for what you will SAY next: its "
+    "topic ('COMPORTAMIENTO DEL DIVERGENTE' = ask about the deviant's behaviour) or its "
+    "tone ('REALISTA' = say something realistic, 'AGRESIVO' = speak aggressively). They are "
+    "not plans or attitudes for the whole situation. "
+)
+
+DECIDE_TASK = OPTIONS_NOTE + (
     "Choose one option. In `reasoning`, explain your choice in character in ONE short "
     "sentence of at most 25 words. In `evidence`, list the ids that justify it: events "
     "from this scene "
@@ -133,6 +141,7 @@ DECIDE_TASK = (
 
 FAST_TASK = (
     "Time is running out. Pick the option that best fits your current stance. "
+    + OPTIONS_NOTE +
     "The options act on what the choice's prompt says they are about; the last thing you "
     "heard may be about something else. "
     "In `reasoning`, give one short sentence of at most 15 words."

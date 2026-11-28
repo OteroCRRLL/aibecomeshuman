@@ -34,6 +34,12 @@ def _clip(path: Path, seconds: int = 7) -> Path:
     return path
 
 
+@pytest.fixture(autouse=True)
+def letters_on_screen(monkeypatch):
+    # Synthetic clips have no coloured button letters; pretend the local detector sees them.
+    monkeypatch.setattr("aibecomeshuman.live.shadow.menu_score", lambda image: 4)
+
+
 class ScriptedObserver:
     """Daniel speaks, a menu stays up from 2 to 7 s (the operator hesitates), then the
     protagonist says the picked line."""

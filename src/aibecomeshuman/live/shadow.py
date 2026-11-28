@@ -45,6 +45,7 @@ from aibecomeshuman.perception.video import (
     MENU_REPEAT_S,
     encode_jpeg,
     fmt_time,
+    menu_score,
     select_keyframes,
     shrink_jpeg,
 )
@@ -202,6 +203,7 @@ class ShadowSession:
         self._on_hidden_screen = False
         self._urgent_menu_t = -1e9  # last menu frame sent urgently (video time)
         self._urgent_first_t = -1e9  # first urgent frame of the current reading attempt
+        self._letters: dict[float, int] = {}  # keyframe time -> button letters seen locally
         self._runner: ScenarioRunner | None = None  # the current scene's character
         self._decide_lock = threading.Lock()
         self._choice_n = 0
@@ -256,6 +258,8 @@ class ShadowSession:
                     pending.clear()
 
             for kf in keyframes:
+                # Button letters really on screen: a "menu" without them is not one.
+                self._letters[kf.t] = menu_score(kf.image)
                 seq = next(seqs)
                 self.report.keyframes += 1
                 name = f"t{int(kf.t):05d}_{kf.reason}.jpg"
@@ -458,6 +462,14 @@ class ShadowSession:
         labels = [o.label.strip() for o in visible.choice.options if not o.locked and o.label]
         if len(labels) < 2:
             return
+        lettered = [o for o in visible.choice.options if o.button in BUTTONS and not o.locked]
+        letters = self._letters.get(visible.t)
+        if lettered and letters is not None and letters < min(len(lettered), 3):
+            # The observer says "buttons", the screen shows no such coloured letters:
+            # typically the objectives list. Never press on it.
+            self.events.emit("perception.not_a_menu", source="perception",
+                             payload={"t": visible.t, "labels": labels, "letters": letters})
+            return
         if self._looks_like_display_text(labels):
             # Objectives ("DEDUCE LO QUE PASÓ") or analysis texts read as a menu: pressing
             # a button now would act in the game for nothing.
@@ -477,7 +489,7 @@ class ShadowSession:
         # The countdown started when the frame was captured, not when it was read.
         directions = {o.label.strip(): o.direction for o in visible.choice.options}
         payload = (labels, buttons, visible.choice.timed, captured_at, visible.choice.about,
-                   directions)
+                   directions, visible.choice.kind)
         # Decide right away on a thread of its own: the character's usual queue may be busy
         # (a stance update, a speaker guess) and a countdown is running.
         threading.Thread(target=self._decide_now, args=(payload,), daemon=True).start()
@@ -626,16 +638,22 @@ class ShadowSession:
         return answer or "unknown"
 
     def _suggest(
-        self, runner, n, labels, buttons, timed, seen_at, about="", directions=None
+        self, runner, n, labels, buttons, timed, seen_at, about="", directions=None,
+        kind="dialogue",
     ) -> None:
         elapsed = time.monotonic() - seen_at
         # Timed menus take the fast path (stance + recent scene + fast model); the others are
         # decided with the whole scene and memory. Forcing every menu onto the fast path
         # made the agent reason from a drifting stance (first mission, Allen's questions).
         seconds = max(1.5, self.live.timed_choice_s - elapsed) if timed else None
+        what = {
+            "dialogue": "A conversation: each option is something you will SAY next",
+            "action": "Each option is something you will DO",
+            "stick": "A physical action: each option is a movement you will make",
+        }.get(kind, "Each option is something you will say or do")
         choice = Choice(
             id=f"live{n}",
-            prompt=f"The options are about: {about}" if about else "",
+            prompt=f"{what}." + (f" It concerns: {about}." if about else ""),
             timed=timed,
             seconds=seconds,
             options=[Option(id=f"o{i}", label=label) for i, label in enumerate(labels, 1)],
